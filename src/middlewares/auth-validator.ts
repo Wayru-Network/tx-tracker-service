@@ -17,18 +17,8 @@ export async function errorHandler(ctx: Context, next: Next) {
 
 // Optional: Authentication validation middleware
 export async function authValidator(ctx: Context, next: Next) {
-  const token = ctx.headers.authorization;
+  //@TODO: Add auth validation here
 
-  if (!token) {
-    ctx.response.status = 401;
-    ctx.response.body = {
-      error: true,
-      message: 'Unauthorized'
-    };
-    return;
-  }
-
-  // add auth validation here
   await next();
 
 }

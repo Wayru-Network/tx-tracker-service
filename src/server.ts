@@ -6,6 +6,7 @@ import { dbErrorHandler } from "@middlewares/db-error-handler";
 import { ENV } from "@config/env/env";
 import { bootstrap } from "./bootstrap/bootstrap";
 import { shutdown } from "@bootstrap/shutdown";
+import apiRoutes from "./api/api.routes";
 
 // start server app and services
 const app = new Koa();
@@ -15,6 +16,10 @@ app.use(logger());
 app.use(bodyParser());
 app.use(errorHandler);
 app.use(dbErrorHandler);
+
+// Routes
+app.use(apiRoutes.routes());
+app.use(apiRoutes.allowedMethods());
 
 // Global error handling
 app.on('error', async (err, ctx) => {
