@@ -2,7 +2,7 @@ import { CtxStakesByWalletRequest } from "@interfaces/api/hotspots-stakes/reques
 import { getStakesByWalletAddress } from "../services/hotspots-stakes.queries";
 
 export class HotspotsStakesController {
-    static async stakesByWallet(ctx: CtxStakesByWalletRequest) {
+    static async stakesByWallet(ctx: CtxStakesByWalletRequest): Promise<void> {
         const walletAddress = ctx.params.walletAddress;
         const { page, pageSize } = ctx.query
         const data = await getStakesByWalletAddress({

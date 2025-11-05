@@ -25,6 +25,7 @@ export class DepinProgramManager {
             while (DepinProgramManager.isInitializing) {
                 await new Promise(resolve => setTimeout(resolve, 100));
             }
+            // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
             return DepinProgramManager.instance!;
         }
 
@@ -34,7 +35,7 @@ export class DepinProgramManager {
                 throw new Error("SOLANA_WALLET_PRIVATE_KEY is not set");
             }
             const connection = getSolanaConnection();
-            const adminKeypair = await getKeyPair(ENV.SOLANA_WALLET_PRIVATE_KEY) as unknown as anchor.web3.Keypair;
+            const adminKeypair = getKeyPair(ENV.SOLANA_WALLET_PRIVATE_KEY) as unknown as anchor.web3.Keypair;
             const provider = new anchor.AnchorProvider(
                 connection,
                 new anchor.Wallet(adminKeypair),
@@ -50,6 +51,7 @@ export class DepinProgramManager {
                 throw new Error('❌ Failed to initialize Boost Stake Program: IDL not found');
             }
 
+            // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
             DepinProgramManager.instance = await anchor.Program.at(
                 programId,
                 provider
@@ -65,7 +67,7 @@ export class DepinProgramManager {
         }
     }
 
-    static cleanup() {
+    static cleanup(): void {
         if (DepinProgramManager.instance) {
             // clean up connections if necessary
             DepinProgramManager.instance = null;

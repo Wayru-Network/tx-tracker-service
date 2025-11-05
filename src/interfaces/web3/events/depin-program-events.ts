@@ -9,7 +9,7 @@ export interface InstructionEvent {
     slot: number;
     timestamp: number;
     accounts?: anchor.web3.PublicKey[];
-    data?: any;
+    data?: unknown;
 }
 
 /**

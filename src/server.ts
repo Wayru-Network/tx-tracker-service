@@ -22,10 +22,11 @@ app.use(apiRoutes.routes());
 app.use(apiRoutes.allowedMethods());
 
 // Global error handling
-app.on('error', async (err, ctx) => {
+app.on('error', (err, _ctx) => {
   console.error('Server Error:', err);
-  await shutdown();
-  process.exit(1);
+  void shutdown().then(() => {
+    process.exit(1);
+  });
 });
 
 

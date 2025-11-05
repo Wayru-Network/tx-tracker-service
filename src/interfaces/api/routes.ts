@@ -1,7 +1,7 @@
-import { Context } from 'koa';
+import { Context, Middleware } from 'koa';
 
 
-export interface CtxBase<TBody = any, TParams = any> extends Context {
+export interface CtxBase<TBody = Record<string, never>, TParams = Record<string, never>> extends Context {
     request: Context['request'] & {
         body: TBody;
     };
@@ -15,8 +15,8 @@ export interface CtxBase<TBody = any, TParams = any> extends Context {
 export type HttpMethod = 'get' | 'post' | 'put' | 'delete' | 'patch';
 
 
-export interface Route<T = any> {
+export interface Route<_TBody = Record<string, never>, _TParams = Record<string, never>> {
     method: HttpMethod;
     path: string;
-    handler: (ctx: CtxBase<T>) => Promise<void>;
+    handler: Middleware;
 }

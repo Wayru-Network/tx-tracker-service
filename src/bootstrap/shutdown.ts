@@ -3,7 +3,7 @@ import { DepinProgramEventListener } from "@services/web3/events/depin-program-e
 /**
  * Shutdown all services
  */
-export const shutdown = async () => {
+export const shutdown = async (): Promise<void> => {
     try {
         console.log('🛑 Shutting down services...');
 

@@ -13,7 +13,15 @@ export const getStakesByWalletAddress = async ({
     walletAddress: string;
     page: number;
     pageSize: number;
-}) => {
+}): Promise<{
+    data: HotspotsStakesOutput[];
+    pagination: {
+        page: number;
+        pageSize: number;
+        total: number;
+        totalPages: number;
+    };
+}> => {
     try {
         await pool.connect();
         const offset = calcOffset(page, pageSize);
@@ -45,7 +53,7 @@ export const getStakesByWalletAddress = async ({
         WHERE hs.staker_wallet_address = '${walletAddress}'
         AND nnl.network_id IS NOT NULL
     `);
-        const total = parseInt(countResult[0]?.total || "0");
+        const total = parseInt(countResult[0]?.total ?? "0");
 
         // for the moment, we are using a fixed value for the earned wayru
         for (const d of data) {

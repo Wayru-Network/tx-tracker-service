@@ -2,7 +2,6 @@ import * as anchor from "@coral-xyz/anchor";
 import { getSolanaConnection } from "../solana/solana-connection.service";
 import { getDepinProgramId } from "../program/depin-program.service";
 import {
-    DEPIN_INSTRUCTION_DISCRIMINATORS,
     getInstructionName
 } from "@constants/depin-instructions";
 import {
@@ -51,6 +50,7 @@ export class DepinProgramEventListener {
     /**
      * Start listening for program events
      */
+    // eslint-disable-next-line @typescript-eslint/require-await
     async startListening(): Promise<void> {
         if (this.isListening) {
             console.warn('⚠️ Event listener is already running');
@@ -62,8 +62,8 @@ export class DepinProgramEventListener {
 
             this.subscriptionId = this.connection.onLogs(
                 this.programId,
-                async (logs, context) => {
-                    await this.handleLogs(logs, context);
+                (logs, context) => {
+                    void this.handleLogs(logs, context);
                 },
                 'confirmed'
             );
@@ -86,12 +86,13 @@ export class DepinProgramEventListener {
         }
 
         try {
-            this.connection.removeOnLogsListener(this.subscriptionId);
+            void this.connection.removeOnLogsListener(this.subscriptionId);
             this.subscriptionId = null;
             this.isListening = false;
             console.log('🛑 Event listener stopped');
         } catch (error) {
             console.error('❌ Error stopping event listener:', error);
+            // Error is handled by logging, no need to rethrow
         }
     }
 
@@ -109,13 +110,13 @@ export class DepinProgramEventListener {
                 maxSupportedTransactionVersion: 0,
             });
 
-            if (!tx || !tx.meta || tx.meta.err) {
+            if (!tx?.meta || tx.meta.err) {
                 return; // Transaction failed or not found
             }
 
             // Handle both legacy and versioned transactions
             let accountKeys: anchor.web3.PublicKey[] = [];
-            let programInstructions: anchor.web3.TransactionInstruction[] = [];
+            const programInstructions: anchor.web3.TransactionInstruction[] = [];
 
             // Check if transaction is versioned by looking at the message structure
             const message = tx.transaction.message;
@@ -123,7 +124,7 @@ export class DepinProgramEventListener {
             // Check if it's a versioned message (has 'version' property)
             if ('version' in message && message.version !== undefined) {
                 // Versioned transaction (V0)
-                const versionedMessage = message as anchor.web3.VersionedMessage;
+                const versionedMessage = message as unknown as anchor.web3.VersionedMessage;
                 const accountKeysObj = versionedMessage.getAccountKeys();
                 accountKeys = accountKeysObj.staticAccountKeys;
 
@@ -133,7 +134,7 @@ export class DepinProgramEventListener {
                     const programKeyIndex = compiledIx.programIdIndex;
                     const programKey = accountKeys[programKeyIndex];
 
-                    if (programKey && programKey.equals(this.programId)) {
+                    if (programKey?.equals(this.programId)) {
                         // Convert compiled instruction to TransactionInstruction
                         const instruction = {
                             programId: programKey,
@@ -142,7 +143,7 @@ export class DepinProgramEventListener {
                             ),
                             data: Buffer.from(compiledIx.data),
                         };
-                        programInstructions.push(instruction as anchor.web3.TransactionInstruction);
+                        programInstructions.push(instruction);
                     }
                 }
             } else {
@@ -155,12 +156,12 @@ export class DepinProgramEventListener {
 
                 // Process compiled instructions for our program
                 // Instructions in legacy messages are CompiledInstruction[]
-                const compiledInstructions = legacyMessage.instructions as anchor.web3.CompiledInstruction[];
+                const compiledInstructions = legacyMessage.instructions as unknown as anchor.web3.CompiledInstruction[];
                 for (const compiledIx of compiledInstructions) {
                     const programKeyIndex = compiledIx.programIdIndex;
                     const programKey = accountKeys[programKeyIndex];
 
-                    if (programKey && programKey.equals(this.programId)) {
+                    if (programKey?.equals(this.programId)) {
                         // Convert compiled instruction to TransactionInstruction
                         const instruction = {
                             programId: programKey,
@@ -173,7 +174,7 @@ export class DepinProgramEventListener {
                             ),
                             data: Buffer.from(compiledIx.data),
                         };
-                        programInstructions.push(instruction as anchor.web3.TransactionInstruction);
+                        programInstructions.push(instruction);
                     }
                 }
             }
@@ -234,7 +235,7 @@ export class DepinProgramEventListener {
         allAccountKeys?: anchor.web3.PublicKey[] // All transaction accounts (for balance lookups)
     ): Promise<DepinProgramEvent> {
         // Use allAccountKeys if provided, otherwise fall back to accountKeys
-        const accountsForBalanceLookup = allAccountKeys || accountKeys;
+        const accountsForBalanceLookup = allAccountKeys ?? accountKeys;
         // Common fields for all events
         const commonFields = {
             ...baseEvent,
@@ -242,7 +243,7 @@ export class DepinProgramEventListener {
         };
 
         switch (instructionName) {
-            case 'stake':
+            case 'stake': {
                 // Stake instruction: discriminator (8 bytes) + amount (8 bytes)
                 // Account order (according to IDL):
                 // 0: user, 1: tokenMint, 2: adminAccount, 3: nfnodeEntry, 4: depositEntry,
@@ -250,7 +251,9 @@ export class DepinProgramEventListener {
                 // 9: tokenStorageAuthority, 10: tokenStorageAccount, 11: programAuthority,
                 // 12: tokenProgram, 13: tokenProgramSpl, 14: associatedTokenProgram,
                 // 15: systemProgram, 16: feeReceivingWallet
-                const stakeAmount = instructionData.length >= 16
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-redundant-type-constituents
+                const stakeAmount: anchor.BN | undefined = instructionData.length >= 16
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-call
                     ? new anchor.BN(instructionData.slice(8, 16), 'le')
                     : undefined;
                 const stakeFeeData = this.extractFeeData(
@@ -262,14 +265,17 @@ export class DepinProgramEventListener {
                 return {
                     ...commonFields,
                     instructionName: 'stake',
-                    user: accountKeys[0] || undefined,
-                    externalNftMint: accountKeys[5] || undefined, // Index 5 = account #6 in explorer
-                    stakeNftMint: accountKeys[6] || undefined,    // Index 6 = account #7 in explorer - this IS the mint address
+                    user: accountKeys[0] ?? undefined,
+                    externalNftMint: accountKeys[5] ?? undefined, // Index 5 = account #6 in explorer
+                    stakeNftMint: accountKeys[6] ?? undefined,    // Index 6 = account #7 in explorer - this IS the mint address
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                     amount: stakeAmount,
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                     wayruFeeAmount: stakeFeeData.feeAmount,
                 } as StakeEvent;
+            }
 
-            case 'unstake':
+            case 'unstake': {
                 // Unstake instruction: only discriminator (8 bytes)
                 // Account order (according to IDL):
                 // 0: user, 1: tokenMint, 2: adminAccount, 3: nfnodeEntry, 4: depositEntry,
@@ -287,14 +293,17 @@ export class DepinProgramEventListener {
                 return {
                     ...commonFields,
                     instructionName: 'unstake',
-                    user: accountKeys[0] || undefined,
-                    externalNftMint: accountKeys[5] || undefined, // Index 5 = account #6 in explorer
-                    stakeNftMint: accountKeys[6] || undefined,    // Index 6 = account #7 in explorer
+                    user: accountKeys[0] ?? undefined,
+                    externalNftMint: accountKeys[5] ?? undefined, // Index 5 = account #6 in explorer
+                    stakeNftMint: accountKeys[6] ?? undefined,    // Index 6 = account #7 in explorer
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                     amount: unstakeData.userAmount,
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                     wayruFeeAmount: unstakeData.feeAmount,
                 } as UnstakeEvent;
+            }
 
-            case 'initStakeNft':
+            case 'initStakeNft': {
                 // InitStakeNft instruction: discriminator (8 bytes) + metadata args + amount (8 bytes)
                 // Account order (according to IDL and actual transaction):
                 // 0: user, 1: tokenMint, 2: adminAccount, 3: nfnodeEntry, 4: depositEntry,
@@ -340,7 +349,9 @@ export class DepinProgramEventListener {
                     }
                 }
 
-                const initAmount = instructionData.length >= amountOffset + 8
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-redundant-type-constituents
+                const initAmount: anchor.BN | undefined = instructionData.length >= amountOffset + 8
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-call
                     ? new anchor.BN(instructionData.slice(amountOffset, amountOffset + 8), 'le')
                     : undefined;
                 const initFeeData = this.extractFeeData(
@@ -359,21 +370,25 @@ export class DepinProgramEventListener {
                 return {
                     ...commonFields,
                     instructionName: 'initStakeNft',
-                    user: accountKeys[0] || undefined,
-                    externalNftMint: accountKeys[5] || undefined, // Index 5 = account #6 in explorer
-                    stakeNftMint: detectedStakeNftMint || accountKeys[6] || undefined, // Index 6 = account #7 in explorer, or detect from transfers
+                    user: accountKeys[0] ?? undefined,
+                    externalNftMint: accountKeys[5] ?? undefined, // Index 5 = account #6 in explorer
+                    stakeNftMint: detectedStakeNftMint ?? accountKeys[6] ?? undefined, // Index 6 = account #7 in explorer, or detect from transfers
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                     amount: initAmount,
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                     wayruFeeAmount: initFeeData.feeAmount,
                 } as InitStakeNftEvent;
+            }
 
-            case 'initializeNfnode':
+            case 'initializeNfnode': {
                 // InitializeNfnode instruction: only discriminator (8 bytes)
                 return {
                     ...commonFields,
                     instructionName: 'initializeNfnode',
-                    user: accountKeys[0] || undefined,
-                    externalNftMint: accountKeys[2] || undefined,
+                    user: accountKeys[0] ?? undefined,
+                    externalNftMint: accountKeys[2] ?? undefined,
                 } as InitializeNfnodeEvent;
+            }
 
             default:
                 return commonFields as DepinProgramEvent;
@@ -412,7 +427,9 @@ export class DepinProgramEventListener {
             key => key && feeReceivingWallet && key.equals(feeReceivingWallet)
         );
 
-        let userAmount: anchor.BN | undefined;
+        // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents, @typescript-eslint/no-unused-vars
+        let _userAmount: anchor.BN | undefined;
+        // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents
         let feeAmount: anchor.BN | undefined;
 
         // Find fee amount from feeReceivingWallet balance increase
@@ -426,10 +443,14 @@ export class DepinProgramEventListener {
 
             if (preFeeBalance && postFeeBalance &&
                 preFeeBalance.uiTokenAmount && postFeeBalance.uiTokenAmount) {
-                const preFee = new anchor.BN(preFeeBalance.uiTokenAmount.amount || "0");
-                const postFee = new anchor.BN(postFeeBalance.uiTokenAmount.amount || "0");
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
+                const preFee = new anchor.BN(preFeeBalance.uiTokenAmount.amount ?? "0");
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
+                const postFee = new anchor.BN(postFeeBalance.uiTokenAmount.amount ?? "0");
 
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
                 if (postFee.gt(preFee)) {
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
                     feeAmount = postFee.sub(preFee);
                 }
             }
@@ -441,6 +462,7 @@ export class DepinProgramEventListener {
         // The user account balance change = deposit - fee, so we need to find the deposit amount
 
         // First, try to find by looking at all balance increases and find the one to userTokenAccount
+        // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents
         let depositAmount: anchor.BN | undefined;
 
         // Look through all balance changes to find transfers TO the user
@@ -457,14 +479,19 @@ export class DepinProgramEventListener {
             );
 
             if (postBalance && preBalance.uiTokenAmount && postBalance.uiTokenAmount) {
-                const preAmount = new anchor.BN(preBalance.uiTokenAmount.amount || "0");
-                const postAmount = new anchor.BN(postBalance.uiTokenAmount.amount || "0");
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
+                const preAmount = new anchor.BN(preBalance.uiTokenAmount.amount ?? "0");
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
+                const postAmount = new anchor.BN(postBalance.uiTokenAmount.amount ?? "0");
 
                 // If balance increased
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
                 if (postAmount.gt(preAmount)) {
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
                     const increase = postAmount.sub(preAmount);
 
                     // Skip if this is the fee amount (10 tokens)
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
                     if (feeAmount && increase.eq(feeAmount)) {
                         continue;
                     }
@@ -474,16 +501,21 @@ export class DepinProgramEventListener {
                         // This is the user's account. The increase is the net change (deposit - fee)
                         // So the deposit amount = increase + fee
                         if (feeAmount) {
+                            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
                             depositAmount = increase.add(feeAmount);
                         } else {
                             // If fee not detected, but increase ends with 990 (like 24,990),
                             // it's likely net change with a 10 token fee, so add 10
-                            const increaseStr = increase.toString();
+                            // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment
+                            const increaseStr: string = increase.toString();
+                            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                             if (increaseStr.endsWith('9990') || increaseStr.endsWith('990')) {
                                 // Likely net change with 10 token fee
+                                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
                                 depositAmount = increase.add(new anchor.BN(10));
                             } else {
                                 // Otherwise, use the increase as deposit
+                                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                                 depositAmount = increase;
                             }
                         }
@@ -496,7 +528,9 @@ export class DepinProgramEventListener {
         // If we didn't find by userTokenAccount index, look for the largest increase that's not the fee
         // This is the deposit amount (25,000 tokens)
         if (!depositAmount) {
+            // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents
             let maxIncrease: anchor.BN | undefined;
+            // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents
             let secondMaxIncrease: anchor.BN | undefined;
 
             for (const preBalance of txMeta.preTokenBalances) {
@@ -512,22 +546,32 @@ export class DepinProgramEventListener {
                 );
 
                 if (postBalance && preBalance.uiTokenAmount && postBalance.uiTokenAmount) {
-                    const preAmount = new anchor.BN(preBalance.uiTokenAmount.amount || "0");
-                    const postAmount = new anchor.BN(postBalance.uiTokenAmount.amount || "0");
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
+                    const preAmount = new anchor.BN(preBalance.uiTokenAmount.amount ?? "0");
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
+                    const postAmount = new anchor.BN(postBalance.uiTokenAmount.amount ?? "0");
 
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
                     if (postAmount.gt(preAmount)) {
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
                         const increase = postAmount.sub(preAmount);
 
                         // Skip if this is the fee amount (10 tokens)
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
                         if (feeAmount && increase.eq(feeAmount)) {
                             continue;
                         }
 
                         // Track the two largest increases
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
                         if (!maxIncrease || increase.gt(maxIncrease)) {
+                            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                             secondMaxIncrease = maxIncrease;
+                            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                             maxIncrease = increase;
+                            // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
                         } else if (!secondMaxIncrease || increase.gt(secondMaxIncrease)) {
+                            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                             secondMaxIncrease = increase;
                         }
                     }
@@ -540,23 +584,31 @@ export class DepinProgramEventListener {
             if (maxIncrease) {
                 // If there's a fee and maxIncrease seems like it could be net change (24,990),
                 // add the fee to get the deposit amount (25,000)
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
                 if (feeAmount && maxIncrease.lt(feeAmount.mul(new anchor.BN(1000))) &&
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
                     maxIncrease.gt(feeAmount.mul(new anchor.BN(10)))) {
                     // maxIncrease is between 100 and 1000 times the fee, likely net change
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
                     depositAmount = maxIncrease.add(feeAmount);
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
                 } else if (secondMaxIncrease && maxIncrease.gt(secondMaxIncrease.mul(new anchor.BN(10)))) {
                     // maxIncrease is much larger than secondMaxIncrease, it's the deposit
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                     depositAmount = maxIncrease;
                 } else {
                     // Default: use maxIncrease as deposit
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                     depositAmount = maxIncrease;
                 }
             }
         }
 
-        userAmount = depositAmount;
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        const finalUserAmount = depositAmount;
 
-        return { userAmount, feeAmount };
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        return { userAmount: finalUserAmount, feeAmount };
     }
 
     /**
@@ -603,37 +655,44 @@ export class DepinProgramEventListener {
         }
 
         // Find the fee wallet by searching in balances directly (more robust than using index)
-        let preFeeBalance = txMeta.preTokenBalances.find(
+        const preFeeBalance = txMeta.preTokenBalances.find(
             (b) => b.accountIndex < allAccountKeys.length &&
-                allAccountKeys[b.accountIndex] &&
-                allAccountKeys[b.accountIndex].equals(feeReceivingWallet)
+                allAccountKeys[b.accountIndex]?.equals(feeReceivingWallet)
         );
-        let postFeeBalance = txMeta.postTokenBalances.find(
+        const postFeeBalance = txMeta.postTokenBalances.find(
             (b) => b.accountIndex < allAccountKeys.length &&
-                allAccountKeys[b.accountIndex] &&
-                allAccountKeys[b.accountIndex].equals(feeReceivingWallet)
+                allAccountKeys[b.accountIndex]?.equals(feeReceivingWallet)
         );
 
         if (preFeeBalance && postFeeBalance &&
             preFeeBalance.uiTokenAmount && postFeeBalance.uiTokenAmount) {
-            const preFee = new anchor.BN(preFeeBalance.uiTokenAmount.amount || "0");
-            const postFee = new anchor.BN(postFeeBalance.uiTokenAmount.amount || "0");
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
+            const preFee = new anchor.BN(preFeeBalance.uiTokenAmount.amount ?? "0");
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
+            const postFee = new anchor.BN(postFeeBalance.uiTokenAmount.amount ?? "0");
 
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
             if (postFee.gt(preFee)) {
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment
                 return { feeAmount: postFee.sub(preFee) };
             }
         }
 
         // Fallback: Search for any balance increase that matches the fee amount (10 tokens)
         // This is useful if the fee wallet doesn't have a pre-balance
-        if (!preFeeBalance && postFeeBalance && postFeeBalance.uiTokenAmount) {
-            const postFee = new anchor.BN(postFeeBalance.uiTokenAmount.amount || "0");
+        if (!preFeeBalance && postFeeBalance?.uiTokenAmount) {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
+            const postFee = new anchor.BN(postFeeBalance.uiTokenAmount.amount ?? "0");
             // If post balance is exactly 10 tokens (or close), it might be the fee
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
             const expectedFee = new anchor.BN(10000000); // 10 tokens with 6 decimals
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
             if (postFee.eq(expectedFee) || postFee.gt(new anchor.BN(0))) {
                 // Could be the fee, but we need to be careful
                 // Only return if it's a reasonable amount (10 tokens)
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
                 if (postFee.eq(expectedFee)) {
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                     return { feeAmount: postFee };
                 }
             }
@@ -649,9 +708,9 @@ export class DepinProgramEventListener {
      */
     private async detectStakeNftMintFromTransfers(
         txMeta?: anchor.web3.ConfirmedTransactionMeta,
-        accountKeys?: anchor.web3.PublicKey[]
+        _accountKeys?: anchor.web3.PublicKey[]
     ): Promise<anchor.web3.PublicKey | undefined> {
-        if (!txMeta || !txMeta.preTokenBalances || !txMeta.postTokenBalances) {
+        if (!txMeta?.preTokenBalances || !txMeta.postTokenBalances) {
             return undefined;
         }
 
@@ -662,13 +721,13 @@ export class DepinProgramEventListener {
 
             for (const postBalance of txMeta.postTokenBalances) {
                 // Check if this account received exactly 1 token
-                if (postBalance.uiTokenAmount && postBalance.uiTokenAmount.amount === '1') {
+                if (postBalance.uiTokenAmount?.amount === '1') {
                     const preBalance = txMeta.preTokenBalances.find(
                         (pb) => pb.accountIndex === postBalance.accountIndex
                     );
 
                     // If balance went from 0 to 1 (or didn't exist before), this is a new NFT
-                    const preAmount = preBalance?.uiTokenAmount?.amount || '0';
+                    const preAmount = preBalance?.uiTokenAmount?.amount ?? '0';
                     if (preAmount === '0' && postBalance.mint) {
                         candidateMints.push(new anchor.web3.PublicKey(postBalance.mint));
                     }
@@ -687,13 +746,15 @@ export class DepinProgramEventListener {
                     const mintInfo = await this.connection.getParsedAccountInfo(mint);
 
                     if (mintInfo.value && 'parsed' in mintInfo.value.data) {
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                         const parsedData = mintInfo.value.data.parsed;
                         // NFT mints have supply of 1
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                         if (parsedData.info.supply === '1') {
                             return mint;
                         }
                     }
-                } catch (error) {
+                } catch (_error) {
                     // Continue checking other candidates
                     continue;
                 }
@@ -741,21 +802,21 @@ export class DepinProgramEventListener {
         // Emit to specific callbacks
         switch (event.instructionName) {
             case 'stake':
-                await Promise.all(this.stakeCallbacks.map(cb => cb(event as StakeEvent)));
+                await Promise.all(this.stakeCallbacks.map(cb => Promise.resolve(cb(event))));
                 break;
             case 'unstake':
-                await Promise.all(this.unstakeCallbacks.map(cb => cb(event as UnstakeEvent)));
+                await Promise.all(this.unstakeCallbacks.map(cb => Promise.resolve(cb(event))));
                 break;
             case 'initStakeNft':
-                await Promise.all(this.initStakeNftCallbacks.map(cb => cb(event as InitStakeNftEvent)));
+                await Promise.all(this.initStakeNftCallbacks.map(cb => Promise.resolve(cb(event))));
                 break;
             case 'initializeNfnode':
-                await Promise.all(this.initializeNfnodeCallbacks.map(cb => cb(event as InitializeNfnodeEvent)));
+                await Promise.all(this.initializeNfnodeCallbacks.map(cb => Promise.resolve(cb(event))));
                 break;
         }
 
         // Emit to all-event callbacks
-        await Promise.all(this.allEventCallbacks.map(cb => cb(event)));
+        await Promise.all(this.allEventCallbacks.map(cb => Promise.resolve(cb(event))));
     }
 
     /**

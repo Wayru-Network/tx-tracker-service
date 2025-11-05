@@ -1,13 +1,19 @@
 import { Context, Next } from 'koa';
 
-export async function errorHandler(ctx: Context, next: Next) {
+interface ErrorWithStatus extends Error {
+  status?: number;
+  message: string;
+}
+
+export async function errorHandler(ctx: Context, next: Next): Promise<void> {
   try {
     await next();
-  } catch (err: any) {
-    ctx.status = err.status || 500;
+  } catch (err: unknown) {
+    const error = err as ErrorWithStatus;
+    ctx.status = error.status ?? 500;
     ctx.body = {
       error: true,
-      message: err.message || 'Internal server error',
+      message: error.message ?? 'Internal server error',
     };
 
     // Emit error for logging
@@ -16,7 +22,7 @@ export async function errorHandler(ctx: Context, next: Next) {
 }
 
 // Optional: Authentication validation middleware
-export async function authValidator(ctx: Context, next: Next) {
+export async function authValidator(ctx: Context, next: Next): Promise<void> {
   //@TODO: Add auth validation here
 
   await next();
