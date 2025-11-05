@@ -3,16 +3,17 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import { formatTokenAmount } from "@utils/token-format";
 import { DepinProgramEventListener } from "./depin-program-event-listener.service";
+import { stake, unStake } from "@api/hotspots-stakes/services/hotspots-stakes.queries";
 
 /**
  * Initialize the Depin Program event listener
  */
-export const initializeDepinProgramEventListener = async (): Promise<void> => {
+export const depinProgramListener = async (): Promise<void> => {
     try {
         const eventListener = await DepinProgramEventListener.getInstance();
 
         // Register event handlers
-        eventListener.onStake((event) => {
+        eventListener.onStake(async (event) => {
             console.log('📊 Stake event detected:', {
                 signature: event.signature,
                 userWalletAddress: event.user?.toString(),
@@ -24,10 +25,15 @@ export const initializeDepinProgramEventListener = async (): Promise<void> => {
                 wayruFeeAmountRaw: event.wayruFeeAmount?.toString(),
                 slot: event.slot,
             });
-            // TODO: Add your logic here (e.g., update database, send notifications, etc.)
+            // create the stake
+            await stake({
+                walletAddress: event.user?.toString() ?? '',
+                amount: event.amount ? formatTokenAmount(event.amount, undefined, false) : '0',
+                externalNftMint: event.externalNftMint?.toString() ?? '',
+            });
         });
 
-        eventListener.onUnstake((event) => {
+        eventListener.onUnstake(async (event) => {
             console.log('📤 Unstake event detected:', {
                 signature: event.signature,
                 userWalletAddress: event.user?.toString(),
@@ -39,10 +45,15 @@ export const initializeDepinProgramEventListener = async (): Promise<void> => {
                 wayruFeeAmountRaw: event.wayruFeeAmount?.toString(),
                 slot: event.slot,
             });
-            // TODO: Add your logic here
+            // unstake the stake
+            await unStake({
+                walletAddress: event.user?.toString() ?? '',
+                amount: event.amount ? formatTokenAmount(event.amount, undefined, false) : '0',
+                externalNftMint: event.externalNftMint?.toString() ?? '',
+            });
         });
 
-        eventListener.onInitStakeNft((event) => {
+        eventListener.onInitStakeNft(async (event) => {
             console.log('🎨 InitStakeNft event detected:', {
                 signature: event.signature,
                 userWalletAddress: event.user?.toString(),
@@ -54,7 +65,12 @@ export const initializeDepinProgramEventListener = async (): Promise<void> => {
                 wayruFeeAmountRaw: event.wayruFeeAmount?.toString(),
                 slot: event.slot,
             });
-            // TODO: Add your logic here
+            // create the stake
+            await stake({
+                walletAddress: event.user?.toString() ?? '',
+                amount: event.amount ? formatTokenAmount(event.amount, undefined, false) : '0',
+                externalNftMint: event.externalNftMint?.toString() ?? '',
+            });
         });
 
         eventListener.onInitializeNfnode((event) => {

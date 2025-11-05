@@ -1,4 +1,4 @@
-import { initializeDepinProgramEventListener } from "@services/web3/events/initialize-depin-program-event.service";
+import { depinProgramListener } from "@services/web3/events/depin-program-listener.service";
 
 
 /** 
@@ -21,7 +21,7 @@ export const bootstrap = async (): Promise<void> => {
 
 
         // Initialize Depin Program event listener
-        await initializeDepinProgramEventListener();
+        await depinProgramListener();
 
         console.log('✅ Bootstrap completed successfully');
     } catch (error) {

@@ -14,4 +14,12 @@ export interface HotspotsStakesOutput {
     name: string
     network_id: number
     earned_wayru: number
+    status: 'staked' | 'unstaked' | 'claimed'
+}
+
+
+export interface CreateStakeInput {
+    walletAddress: string;
+    amount: string;
+    externalNftMint: string;
 }
