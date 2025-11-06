@@ -117,6 +117,12 @@ export const stake = async ({
             throw new Error("Nfnode not found");
         }
 
+        // current date + 90 days, format: YYYY-MM-DD HH:mm:ss (Postgres-friendly)
+        const unlocksIn = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000)
+            .toISOString()
+            .replace('T', ' ')
+            .substring(0, 19);
+
         // Check if a stake already exists with the same walletAddress and externalNftMint with status != 'unstaked'
         const existingStakeResult = await client.query<{ id: number; amount: string | number }>(`
             SELECT hs.id, hs.amount
@@ -161,10 +167,10 @@ export const stake = async ({
 
             const updateResult = await client.query<{ id: number; amount: string | number }>(`
                 UPDATE hotspot_stake 
-                SET amount = $1::numeric, updated_at = $2, status = 'staked'
-                WHERE id = $3
+                SET amount = $1::numeric, updated_at = $2, status = 'staked', unlocks_in = $3::timestamp
+                WHERE id = $4
                 RETURNING id, amount
-            `, [amountToSave, new Date().toISOString(), stakeId]);
+            `, [amountToSave, new Date().toISOString(), unlocksIn, stakeId]);
 
             const savedAmount = typeof updateResult.rows[0]?.amount === 'string'
                 ? parseFloat(updateResult.rows[0].amount)
@@ -178,10 +184,10 @@ export const stake = async ({
             console.log('Inserting with amount value:', amountToInsert, 'Type:', typeof amountToInsert);
 
             const stakeResult = await client.query<{ id: number; amount: string | number }>(`
-                INSERT INTO hotspot_stake (staker_wallet_address, amount, status, created_at, published_at, stake_nft_mint)
-                VALUES ($1, $2::numeric, $3, $4, $5, $6)
+                INSERT INTO hotspot_stake (staker_wallet_address, amount, status, created_at, published_at, stake_nft_mint, unlocks_in)
+                VALUES ($1, $2::numeric, $3, $4, $5, $6, $7::timestamp)
                 RETURNING id, amount
-            `, [walletAddress, amountToInsert, 'staked', new Date().toISOString(), new Date().toISOString(), stakeNftMint]);
+            `, [walletAddress, amountToInsert, 'staked', new Date().toISOString(), new Date().toISOString(), stakeNftMint, unlocksIn]);
 
             stakeId = stakeResult.rows[0]?.id;
             const insertedAmountRaw = stakeResult.rows[0]?.amount;
@@ -258,11 +264,10 @@ export const unStake = async ({
             FROM hotspot_stake hs
             INNER JOIN hotspot_stake_nfnode_links hsnl ON hs.id = hsnl.hotspots_stakes_id
             WHERE hs.staker_wallet_address = $1 
-            AND hs.amount = $2 
-            AND hsnl.nfnode_id = $3
+            AND hsnl.nfnode_id = $2
             AND hs.status = 'staked'
-            AND hs.stake_nft_mint = $4
-        `, [walletAddress, amount, nfnode.id, stakeNftMint]);
+            AND hs.stake_nft_mint = $3
+        `, [walletAddress, nfnode.id, stakeNftMint]);
         const stake = stakeResult.rows?.length > 0 ? stakeResult.rows[0] : null;
         if (!stake) {
             throw new Error("Stake not found");
