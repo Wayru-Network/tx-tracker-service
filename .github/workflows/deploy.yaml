@@ -57,11 +57,11 @@ jobs:
 
     - name: Deploy to AKS
       env:
-        CONTAINER_IMAGE: ${{ env.CONTAINER_REGISTRY }}/web-explorer:${{ env.DEPLOY_ENV }}-${{ env.IMAGE_TAG }}
+        CONTAINER_IMAGE: ${{ env.CONTAINER_REGISTRY }}/explorer-server:${{ env.DEPLOY_ENV }}-${{ env.IMAGE_TAG }}
       run: |
         if [[ ${{ github.ref }} == 'refs/heads/main' ]]; then
           # Replace placeholders in deployment files
-          sed -i "s|\${CONTAINER_REGISTRY}/web-explorer:\${IMAGE_TAG}|$CONTAINER_IMAGE|g" kubernetes/prod/deployment.yaml
+          sed -i "s|\${CONTAINER_REGISTRY}/explorer-server:\${IMAGE_TAG}|$CONTAINER_IMAGE|g" kubernetes/prod/deployment.yaml
           # sed -i "s|\${DOMAIN_NAME}|$DOMAIN_NAME|g" kubernetes/prod/ingress.yaml
         
           # Apply Kubernetes configurations
@@ -70,7 +70,7 @@ jobs:
           # kubectl apply -f kubernetes/prod/ingress.yaml  
         else
           # Replace placeholders in deployment files
-          sed -i "s|\${CONTAINER_REGISTRY}/web-explorer:\${IMAGE_TAG}|$CONTAINER_IMAGE|g" kubernetes/develop/deployment.yaml
+          sed -i "s|\${CONTAINER_REGISTRY}/explorer-server:\${IMAGE_TAG}|$CONTAINER_IMAGE|g" kubernetes/develop/deployment.yaml
           # sed -i "s|\${DOMAIN_NAME}|$DOMAIN_NAME|g" kubernetes/develop/ingress.yaml
         
           # Apply Kubernetes configurations
