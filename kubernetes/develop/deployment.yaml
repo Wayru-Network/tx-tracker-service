@@ -1,0 +1,57 @@
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: explorer-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: explorer-service
+  template:
+    metadata:
+      labels:
+        app: explorer-service
+    spec:
+      containers:
+      - name: explorer-service
+        image: ${CONTAINER_REGISTRY}/explorer-service:${IMAGE_TAG}
+        env:
+            - name: DATABASE_HOST
+              value: "172.168.206.66"
+            - name: DATABASE_NAME
+              value: db_test
+            - name: DATABASE_PORT
+              value: "5432"
+            - name: DATABASE_USERNAME
+              value: EXPLORER_SERVICE
+            - name: NODE_ENV
+              value: develop
+            - name: PORT
+              value: "80"
+            - name: SOLANA_API_URL
+              value: https://devnet.helius-rpc.com/            
+            - name: SOLANA_WALLET_PRIVATE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: explorer-server-secrets
+                  key: SOLANA_WALLET_PRIVATE_KEY
+            - name: DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: explorer-server-secrets
+                  key: DATABASE_PASSWORD
+            - name: SOLANA_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: explorer-server-secrets
+                  key: SOLANA_API_KEY
+        ports:
+        - containerPort: 80
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
