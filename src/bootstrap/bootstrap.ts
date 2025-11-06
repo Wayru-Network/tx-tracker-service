@@ -1,3 +1,5 @@
+import { depinProgramListener } from "@services/web3/events/depin-program-listener.service";
+
 
 /** 
  * Bootstrap the server
@@ -5,19 +7,26 @@
  * - Initialize the cron jobs
  * - Initialize the web3 client
  * - Initialize the logger
- * - Initialize the error handler
+ * - Initialize the error handlerP
  * - Initialize the middleware
  * - Initialize the routes
  * - Initialize the server
  * - Initialize the cron jobs
  * - Initialize the web3 client
+ * - Initialize the Depin Program event listener
  */
-export const bootstrap = async () => {
+export const bootstrap = async (): Promise<void> => {
     try {
-        // call all the functions to initialize the server
-        console.log('Bootstrap started');
+        console.log('🚀 starting bootstrap');
+
+
+        // Initialize Depin Program event listener
+        await depinProgramListener();
+
+        console.log('✅ Bootstrap completed successfully');
     } catch (error) {
-        console.error('Bootstrap failed:', error);
+        console.error('❌ Bootstrap failed:', error);
         process.exit(1);
     }
 };
+
