@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
       - name: explorer-service
-        image: ${CONTAINER_REGISTRY}/explorer-service:${IMAGE_TAG}
+        image: ${CONTAINER_REGISTRY}/explorer-server:${IMAGE_TAG}
         env:
             - name: DATABASE_HOST
               value: "172.168.206.66"
