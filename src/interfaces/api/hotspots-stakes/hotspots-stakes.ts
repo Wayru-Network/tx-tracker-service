@@ -14,7 +14,7 @@ export interface HotspotsStakesOutput {
     name: string
     network_id: number
     earned_wayru: number
-    status: 'staked' | 'unstaked' | 'claimed'
+    status: 'staked' | 'unstaked'
 }
 
 
