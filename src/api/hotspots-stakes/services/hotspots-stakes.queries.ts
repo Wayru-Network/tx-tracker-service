@@ -89,6 +89,7 @@ export const stake = async ({
     walletAddress,
     amount: amountProps,
     externalNftMint,
+    stakeNftMint,
 }: CreateStakeInput): Promise<{ success: boolean; message: string; stakeId?: number }> => {
     const client = await pool.connect();
     console.log('Amount props:', amountProps, 'Type:', typeof amountProps);
@@ -177,10 +178,10 @@ export const stake = async ({
             console.log('Inserting with amount value:', amountToInsert, 'Type:', typeof amountToInsert);
 
             const stakeResult = await client.query<{ id: number; amount: string | number }>(`
-                INSERT INTO hotspot_stake (staker_wallet_address, amount, status, created_at, published_at)
-                VALUES ($1, $2::numeric, $3, $4, $5)
+                INSERT INTO hotspot_stake (staker_wallet_address, amount, status, created_at, published_at, stake_nft_mint)
+                VALUES ($1, $2::numeric, $3, $4, $5, $6)
                 RETURNING id, amount
-            `, [walletAddress, amountToInsert, 'staked', new Date().toISOString(), new Date().toISOString()]);
+            `, [walletAddress, amountToInsert, 'staked', new Date().toISOString(), new Date().toISOString(), stakeNftMint]);
 
             stakeId = stakeResult.rows[0]?.id;
             const insertedAmountRaw = stakeResult.rows[0]?.amount;
@@ -230,6 +231,7 @@ export const unStake = async ({
     walletAddress,
     amount: amountProps,
     externalNftMint,
+    stakeNftMint,
 }: CreateStakeInput): Promise<{ success: boolean; message: string; stakeId?: number }> => {
     const client = await pool.connect();
     console.log('Amount props:', amountProps);
@@ -259,7 +261,8 @@ export const unStake = async ({
             AND hs.amount = $2 
             AND hsnl.nfnode_id = $3
             AND hs.status = 'staked'
-        `, [walletAddress, amount, nfnode.id]);
+            AND hs.stake_nft_mint = $4
+        `, [walletAddress, amount, nfnode.id, stakeNftMint]);
         const stake = stakeResult.rows?.length > 0 ? stakeResult.rows[0] : null;
         if (!stake) {
             throw new Error("Stake not found");

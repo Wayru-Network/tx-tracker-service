@@ -22,4 +22,5 @@ export interface CreateStakeInput {
     walletAddress: string;
     amount: string;
     externalNftMint: string;
+    stakeNftMint: string;
 }

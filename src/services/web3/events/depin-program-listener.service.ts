@@ -30,6 +30,7 @@ export const depinProgramListener = async (): Promise<void> => {
                 walletAddress: event.user?.toString() ?? '',
                 amount: event.amount ? formatTokenAmount(event.amount, undefined, false) : '0',
                 externalNftMint: event.externalNftMint?.toString() ?? '',
+                stakeNftMint: event.stakeNftMint?.toString() ?? '',
             });
         });
 
@@ -50,6 +51,7 @@ export const depinProgramListener = async (): Promise<void> => {
                 walletAddress: event.user?.toString() ?? '',
                 amount: event.amount ? formatTokenAmount(event.amount, undefined, false) : '0',
                 externalNftMint: event.externalNftMint?.toString() ?? '',
+                stakeNftMint: event.stakeNftMint?.toString() ?? '',
             });
         });
 
@@ -70,6 +72,7 @@ export const depinProgramListener = async (): Promise<void> => {
                 walletAddress: event.user?.toString() ?? '',
                 amount: event.amount ? formatTokenAmount(event.amount, undefined, false) : '0',
                 externalNftMint: event.externalNftMint?.toString() ?? '',
+                stakeNftMint: event.stakeNftMint?.toString() ?? '',
             });
         });
 
