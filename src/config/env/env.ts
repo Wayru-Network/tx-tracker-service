@@ -13,5 +13,6 @@ export const ENV = {
   SOLANA_WALLET_PRIVATE_KEY: process.env.SOLANA_WALLET_PRIVATE_KEY ?? '',
   SOLANA_API_URL: process.env.SOLANA_API_URL ?? 'https://api.devnet.solana.com',
   DEFAULT_DEPIN_PROGRAM_ID: process.env.DEFAULT_DEPIN_PROGRAM_ID ?? 'ECcNAeDo6TbYpr1bY2e1uybkiNEuRSbxRbqad4r1azK8',
+  DEFAULT_REWARD_SYSTEM_PROGRAM_ID: process.env.DEFAULT_REWARD_SYSTEM_PROGRAM_ID ?? 'Ey6f9uyT1s3UrCGpc586aeHmEupYdfR2xo8Nh7TpqLhX',
   SOLANA_API_KEY: process.env.SOLANA_API_KEY ?? undefined
 };
