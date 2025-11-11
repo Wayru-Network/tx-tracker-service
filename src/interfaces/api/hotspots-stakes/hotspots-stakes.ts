@@ -24,3 +24,10 @@ export interface CreateStakeInput {
     externalNftMint: string;
     stakeNftMint: string;
 }
+
+export interface ClaimRewardsInput {
+    walletAddress: string;
+    amount: string;
+    nftMintAddress: string;
+    txHash: string;
+}
