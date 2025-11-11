@@ -1,9 +1,9 @@
 import * as anchor from "@coral-xyz/anchor";
 import { ENV } from "@config/env/env";
 import { DepinStake } from "@interfaces/web3/program/depin-program";
-import { getSolanaConnection } from "../solana/solana-connection.service";
-import { getKeyPair } from "../wallet/keypair";
-import { getDepinProgramId } from "./depin-program.service";
+import { getSolanaConnection } from "../../solana/solana-connection.service";
+import { getKeyPair } from "../../wallet/keypair";
+import { getDepinProgramId } from "../depin-program/depin-program.service";
 
 /**
  * - This class is used to manage the depin program
