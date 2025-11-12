@@ -1,6 +1,6 @@
 import * as anchor from "@coral-xyz/anchor";
-import { getSolanaConnection } from "../solana/solana-connection.service";
-import { getRewardSystemProgramId } from "../program/reward-system/reward-system.service";
+import { getSolanaConnection } from "../../solana/solana-connection.service";
+import { getRewardSystemProgramId } from "../../program/reward-system/reward-system.service";
 import {
     getRewardSystemInstructionName
 } from "@constants/reward-system-instructions";
