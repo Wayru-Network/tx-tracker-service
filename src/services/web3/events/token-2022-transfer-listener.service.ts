@@ -1,8 +1,7 @@
 import * as anchor from "@coral-xyz/anchor";
 import { PublicKey } from "@solana/web3.js";
 import { getSolanaConnection } from "../solana/solana-connection.service";
-import { TOKEN_2022_TRACKED_MINT_AUTHORITIES } from "@constants/token-2022-mint-authorities";
-import { updateStakerWalletByStakeNftMint } from "@api/hotspots-stakes/services/hotspots-stakes.queries";
+import { updateStakerWalletByStakeNftMint, batchCheckStakeExistsByNftMints } from "@api/hotspots-stakes/services/hotspots-stakes.queries";
 
 /**
  * Token 2022 Program ID
@@ -10,8 +9,32 @@ import { updateStakerWalletByStakeNftMint } from "@api/hotspots-stakes/services/
 const TOKEN_2022_PROGRAM_ID = new PublicKey("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb");
 
 /**
+ * Configuration for batch processing
+ */
+interface BatchConfig {
+    /** Threshold in transactions per second to trigger batch mode */
+    tpsThreshold: number;
+    /** Maximum batch size */
+    maxBatchSize: number;
+    /** Interval in ms to process batches */
+    batchInterval: number;
+    /** Window size in ms to calculate TPS */
+    tpsWindowSize: number;
+}
+
+/**
+ * Pending transaction to process
+ */
+interface PendingTransaction {
+    signature: string;
+    slot: number;
+    timestamp: number;
+}
+
+/**
  * Service to listen for Token 2022 NFT transfers
- * Monitors transfers of NFTs that have mint authorities from the Depin Program
+ * Monitors transfers of NFTs that exist in our database (hotspot_stake table)
+ * Implements adaptive batch processing based on transaction rate
  */
 export class Token2022TransferListener {
     private static instance: Token2022TransferListener | null = null;
@@ -21,6 +44,18 @@ export class Token2022TransferListener {
 
     // Event callbacks
     private transferCallbacks: Array<(event: TokenTransferEvent) => void | Promise<void>> = [];
+
+    // Batch processing system
+    private transactionQueue: PendingTransaction[] = [];
+    private batchProcessingInterval: NodeJS.Timeout | null = null;
+    private transactionTimestamps: number[] = []; // For TPS calculation
+    private batchConfig: BatchConfig = {
+        tpsThreshold: 10, // Switch to batch mode if > 10 TPS
+        maxBatchSize: 50, // Process max 50 transactions per batch
+        batchInterval: 1000, // Process batch every 1 second
+        tpsWindowSize: 5000, // Calculate TPS over last 5 seconds
+    };
+    private isProcessingBatch = false;
 
     private constructor() {
         this.connection = getSolanaConnection('confirmed');
@@ -37,42 +72,6 @@ export class Token2022TransferListener {
         return Promise.resolve(Token2022TransferListener.instance);
     }
 
-    /**
-     * Get tracked mint authorities from constants
-     */
-    private getMintAuthorities(): PublicKey[] {
-        return TOKEN_2022_TRACKED_MINT_AUTHORITIES;
-    }
-
-    /**
-     * Get mint authority from a mint account
-     */
-    private async getMintAuthority(mintAddress: PublicKey): Promise<PublicKey | null> {
-        try {
-            const mintInfo = await this.connection.getParsedAccountInfo(mintAddress);
-
-            if (!mintInfo.value || !('parsed' in mintInfo.value.data)) {
-                return null;
-            }
-
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-            const parsedData = mintInfo.value.data.parsed;
-
-            // For Token 2022, mint authority is in parsed.info.mintAuthority
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment
-            const mintAuthority = parsedData.info.mintAuthority;
-
-            if (mintAuthority === null || mintAuthority === undefined) {
-                return null; // Mint authority has been revoked
-            }
-
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-            return new PublicKey(mintAuthority);
-        } catch (error) {
-            console.error(`❌ Error getting mint authority for ${mintAddress.toString()}:`, error);
-            return null;
-        }
-    }
 
     /**
      * Start listening for Token 2022 transfers
@@ -85,12 +84,8 @@ export class Token2022TransferListener {
 
         try {
             console.log('🎧 Starting Token 2022 transfer listener...');
-
-            // Log tracked mint authorities
-            const mintAuthorities = this.getMintAuthorities();
-            console.log(`📋 Tracking ${mintAuthorities.length} mint authorities:`,
-                mintAuthorities.map(a => a.toString())
-            );
+            console.log('📋 Will track NFTs that exist in the database (hotspot_stake table)');
+            console.log(`⚙️  Batch processing: Threshold=${this.batchConfig.tpsThreshold} TPS, Max batch=${this.batchConfig.maxBatchSize}, Interval=${this.batchConfig.batchInterval}ms`);
 
             // Subscribe to all Token 2022 program logs
             this.subscriptionId = this.connection.onLogs(
@@ -101,11 +96,129 @@ export class Token2022TransferListener {
                 'confirmed'
             );
 
+            // Start batch processing interval
+            this.startBatchProcessor();
+
             this.isListening = true;
             console.log(`✅ Token 2022 transfer listener started`);
         } catch (error) {
             console.error('❌ Failed to start Token 2022 transfer listener:', error);
             throw error;
+        }
+    }
+
+    /**
+     * Start the batch processor interval
+     */
+    private startBatchProcessor(): void {
+        if (this.batchProcessingInterval) {
+            return; // Already running
+        }
+
+        this.batchProcessingInterval = setInterval(() => {
+            void this.processBatch();
+        }, this.batchConfig.batchInterval);
+    }
+
+    /**
+     * Stop the batch processor interval
+     */
+    private stopBatchProcessor(): void {
+        if (this.batchProcessingInterval) {
+            clearInterval(this.batchProcessingInterval);
+            this.batchProcessingInterval = null;
+        }
+    }
+
+    /**
+     * Calculate current transactions per second
+     */
+    private getCurrentTPS(): number {
+        const now = Date.now();
+        const windowStart = now - this.batchConfig.tpsWindowSize;
+
+        // Remove old timestamps outside the window
+        this.transactionTimestamps = this.transactionTimestamps.filter(
+            (ts) => ts > windowStart
+        );
+
+        // Calculate TPS
+        if (this.transactionTimestamps.length === 0) {
+            return 0;
+        }
+
+        const timeSpan = (now - this.transactionTimestamps[0]) / 1000; // seconds
+        return timeSpan > 0 ? this.transactionTimestamps.length / timeSpan : 0;
+    }
+
+    /**
+     * Process pending transactions in batch
+     */
+    private async processBatch(): Promise<void> {
+        if (this.isProcessingBatch || this.transactionQueue.length === 0) {
+            return;
+        }
+
+        this.isProcessingBatch = true;
+        const currentTPS = this.getCurrentTPS();
+        const shouldUseBatch = currentTPS >= this.batchConfig.tpsThreshold;
+
+        try {
+            if (shouldUseBatch && this.transactionQueue.length > 1) {
+                // Batch mode: process multiple transactions together
+                const batchSize = Math.min(
+                    this.batchConfig.maxBatchSize,
+                    this.transactionQueue.length
+                );
+                const batch = this.transactionQueue.splice(0, batchSize);
+
+                console.log(`📦 Processing batch of ${batch.length} transactions (TPS: ${currentTPS.toFixed(2)})`);
+
+                // Process batch in parallel (with concurrency limit)
+                const concurrencyLimit = 10;
+                for (let i = 0; i < batch.length; i += concurrencyLimit) {
+                    const chunk = batch.slice(i, i + concurrencyLimit);
+                    await Promise.all(
+                        chunk.map((tx) => this.processTransaction(tx.signature, tx.slot))
+                    );
+                }
+
+                console.log(`✅ Batch processed: ${batch.length} transactions`);
+            } else {
+                // Individual mode: process one transaction at a time
+                const tx = this.transactionQueue.shift();
+                if (tx) {
+                    await this.processTransaction(tx.signature, tx.slot);
+                }
+            }
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            console.error(`❌ Error processing batch:`, errorMessage);
+        } finally {
+            this.isProcessingBatch = false;
+        }
+    }
+
+    /**
+     * Process a single transaction (extracted from handleLogs for reuse)
+     */
+    private async processTransaction(signature: string, slot: number): Promise<void> {
+        try {
+            // Get transaction details
+            const tx = await this.connection.getTransaction(signature, {
+                commitment: 'confirmed',
+                maxSupportedTransactionVersion: 0,
+            });
+
+            if (!tx || tx.meta?.err || !tx.meta) {
+                return; // Skip failed or invalid transactions silently
+            }
+
+            // Check for token transfers in the transaction
+            await this.processTokenTransfers(tx, signature, slot);
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            console.error(`❌ Error processing transaction ${signature}:`, errorMessage);
         }
     }
 
@@ -122,6 +235,16 @@ export class Token2022TransferListener {
             void this.connection.removeOnLogsListener(this.subscriptionId);
             this.subscriptionId = null;
             this.isListening = false;
+
+            // Stop batch processor
+            this.stopBatchProcessor();
+
+            // Process remaining queue items before stopping
+            if (this.transactionQueue.length > 0) {
+                console.log(`📦 Processing ${this.transactionQueue.length} remaining transactions before stopping...`);
+                void this.processBatch();
+            }
+
             console.log('🛑 Token 2022 transfer listener stopped');
         } catch (error) {
             console.error('❌ Error stopping Token 2022 transfer listener:', error);
@@ -130,29 +253,41 @@ export class Token2022TransferListener {
 
     /**
      * Handle incoming logs and detect transfers
+     * Adds transactions to queue for adaptive batch processing
      */
-    private async handleLogs(
+    private handleLogs(
         logs: anchor.web3.Logs,
         context: anchor.web3.Context
-    ): Promise<void> {
-        try {
-            // Get transaction details
-            const tx = await this.connection.getTransaction(logs.signature, {
-                commitment: 'confirmed',
-                maxSupportedTransactionVersion: 0,
-            });
+    ): void {
+        // Record transaction timestamp for TPS calculation
+        const now = Date.now();
+        this.transactionTimestamps.push(now);
 
-            if (!tx || tx.meta?.err || !tx.meta) {
-                return; // Skip failed or invalid transactions silently
-            }
+        // Add to queue
+        this.transactionQueue.push({
+            signature: logs.signature,
+            slot: context.slot,
+            timestamp: now,
+        });
 
-            // Check for token transfers in the transaction
-            await this.processTokenTransfers(tx, logs.signature, context.slot);
-        } catch (error) {
-            // Only log errors, not every transaction
-            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-            console.error(`❌ Error handling Token 2022 logs:`, errorMessage);
+        // If queue is getting too large, log warning
+        if (this.transactionQueue.length > 100) {
+            const currentTPS = this.getCurrentTPS();
+            console.warn(
+                `⚠️ Transaction queue is large: ${this.transactionQueue.length} pending (TPS: ${currentTPS.toFixed(2)})`
+            );
         }
+
+        // If TPS is low, process immediately (low latency mode)
+        const currentTPS = this.getCurrentTPS();
+        if (currentTPS < this.batchConfig.tpsThreshold && !this.isProcessingBatch) {
+            // Process immediately for low latency
+            const tx = this.transactionQueue.shift();
+            if (tx) {
+                void this.processTransaction(tx.signature, tx.slot);
+            }
+        }
+        // Otherwise, let the batch processor handle it
     }
 
     /**
@@ -165,12 +300,6 @@ export class Token2022TransferListener {
     ): Promise<void> {
         if (!tx?.meta) {
             return;
-        }
-
-        // Get mint authorities
-        const mintAuthorities = this.getMintAuthorities();
-        if (mintAuthorities.length === 0) {
-            return; // No mint authorities to check
         }
 
         // Extract account keys from transaction (needed for all balance processing)
@@ -246,8 +375,10 @@ export class Token2022TransferListener {
             }
         }
 
-        // Process each balance change
-        for (const [accountIndex, balances] of allBalances) {
+        // First pass: collect all NFT mints from this transaction
+        const nftMints: string[] = [];
+
+        for (const [, balances] of allBalances) {
             const preBalance = balances.pre;
             const postBalance = balances.post;
 
@@ -257,31 +388,61 @@ export class Token2022TransferListener {
                 continue;
             }
 
-            const mintAddress = new PublicKey(mintAddressStr);
             const preAmount = preBalance?.uiTokenAmount?.amount ?? '0';
             const postAmount = postBalance?.uiTokenAmount?.amount ?? '0';
 
             // Check if this is an NFT (amount is 1 or 0)
             if (preAmount !== '1' && preAmount !== '0' && preAmount !== '') {
-                continue; // Not an NFT (skip if preAmount exists and is not 0 or 1)
+                continue; // Not an NFT
             }
             if (postAmount !== '1' && postAmount !== '0' && postAmount !== '') {
-                continue; // Not an NFT (skip if postAmount exists and is not 0 or 1)
+                continue; // Not an NFT
             }
 
-            // Verify mint authority BEFORE processing (more efficient)
-            const mintAuthority = await this.getMintAuthority(mintAddress);
-            if (!mintAuthority) {
-                continue; // No mint authority or revoked
+            // Collect NFT mint for batch check (avoid duplicates)
+            if (!nftMints.includes(mintAddressStr)) {
+                nftMints.push(mintAddressStr);
+            }
+        }
+
+        // Batch check all NFTs in one DB query (much more efficient!)
+        let existingMints: Map<string, boolean> = new Map();
+        if (nftMints.length > 0) {
+            try {
+                existingMints = await batchCheckStakeExistsByNftMints(nftMints);
+            } catch (_error) {
+                // If batch check fails, skip all NFTs in this transaction
+                return;
+            }
+        }
+
+        // Second pass: process only NFTs that exist in our database
+        for (const [accountIndex, balances] of allBalances) {
+            const preBalance = balances.pre;
+            const postBalance = balances.post;
+
+            // Get the mint address
+            const mintAddressStr = preBalance?.mint ?? postBalance?.mint;
+            if (!mintAddressStr) {
+                continue;
             }
 
-            // Check if mint authority is in our list
-            const isValid = mintAuthorities.some((authority) =>
-                authority.equals(mintAuthority)
-            );
+            const mintAddress = new PublicKey(mintAddressStr);
+            const preAmount = preBalance?.uiTokenAmount?.amount ?? '0';
+            const postAmount = postBalance?.uiTokenAmount?.amount ?? '0';
 
-            if (!isValid) {
-                continue; // Not one of our NFTs - skip silently
+            // Check if this is an NFT
+            if (preAmount !== '1' && preAmount !== '0' && preAmount !== '') {
+                continue;
+            }
+            if (postAmount !== '1' && postAmount !== '0' && postAmount !== '') {
+                continue;
+            }
+
+            // Check if this NFT exists in our database (from batch check)
+            const stakeExists = existingMints.get(mintAddressStr) ?? false;
+            if (!stakeExists) {
+                continue; // NFT not in our database - skip silently
             }
 
             // Get account owner from transaction accounts
@@ -423,11 +584,42 @@ export class Token2022TransferListener {
     }
 
     /**
+     * Get current queue statistics
+     */
+    getQueueStats(): {
+        queueLength: number;
+        currentTPS: number;
+        isProcessingBatch: boolean;
+    } {
+        return {
+            queueLength: this.transactionQueue.length,
+            currentTPS: this.getCurrentTPS(),
+            isProcessingBatch: this.isProcessingBatch,
+        };
+    }
+
+    /**
+     * Update batch configuration
+     */
+    updateBatchConfig(config: Partial<BatchConfig>): void {
+        this.batchConfig = { ...this.batchConfig, ...config };
+        console.log('⚙️  Batch config updated:', this.batchConfig);
+
+        // Restart batch processor if interval changed
+        if (config.batchInterval) {
+            this.stopBatchProcessor();
+            this.startBatchProcessor();
+        }
+    }
+
+    /**
      * Cleanup and reset instance
      */
     cleanup(): void {
         this.stopListening();
         this.transferCallbacks = [];
+        this.transactionQueue = [];
+        this.transactionTimestamps = [];
         Token2022TransferListener.instance = null;
         console.log('🧹 Token 2022 transfer listener cleaned up');
     }

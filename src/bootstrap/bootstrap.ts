@@ -1,20 +1,12 @@
 import { depinProgramListener } from "@services/web3/events/depin-program/depin-program-listener.service";
 import { rewardSystemListener } from "@services/web3/events/reward-system/reward-system-listener.service";
 import { token2022Listener } from "@services/web3/events/token-2022-listener.service";
+import { ensureIndices } from "@database/ensure-indices";
 
 
 /** 
  * Bootstrap the server
- * - Initialize the database
- * - Initialize the cron jobs
- * - Initialize the web3 client
- * - Initialize the logger
- * - Initialize the error handlerP
- * - Initialize the middleware
- * - Initialize the routes
- * - Initialize the server
- * - Initialize the cron jobs
- * - Initialize the web3 client
+ * - Initialize the database indices
  * - Initialize the Depin Program event listener
  * - Initialize the Reward System event listener
  * - Initialize the Token 2022 transfer listener
@@ -22,6 +14,9 @@ import { token2022Listener } from "@services/web3/events/token-2022-listener.ser
 export const bootstrap = async (): Promise<void> => {
     try {
         console.log('🚀 starting bootstrap');
+
+        // Ensure database indices exist (performance optimization)
+        await ensureIndices();
 
         // Initialize Depin Program event listener
         await depinProgramListener();
