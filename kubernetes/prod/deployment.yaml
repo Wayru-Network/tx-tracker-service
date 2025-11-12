@@ -24,7 +24,7 @@ spec:
             - name: DATABASE_PORT
               value: "5432"
             - name: DATABASE_USERNAME
-              value: EXPLORER_SERVICE
+              value: TX_TRACKER_SERVICE
             - name: NODE_ENV
               value: production
             - name: PORT
