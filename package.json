@@ -1,7 +1,7 @@
 {
-  "name": "explorer-server",
+  "name": "tx-tracker-server",
   "version": "1.0.0",
-  "description": "Explorer Server",
+  "description": "Blockchain transactions tracker for Wayru Network Ecosystem",
   "main": "index.js",
   "type": "commonjs",
   "scripts": {
