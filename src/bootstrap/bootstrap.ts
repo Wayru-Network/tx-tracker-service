@@ -1,5 +1,5 @@
-import { depinProgramListener } from "@services/web3/events/depin-program-listener.service";
-import { rewardSystemListener } from "@services/web3/events/reward-system-listener.service";
+import { depinProgramListener } from "@services/web3/events/depin-program/depin-program-listener.service";
+import { rewardSystemListener } from "@services/web3/events/reward-system/reward-system-listener.service";
 
 
 /** 
