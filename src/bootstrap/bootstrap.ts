@@ -1,5 +1,6 @@
 import { depinProgramListener } from "@services/web3/events/depin-program/depin-program-listener.service";
 import { rewardSystemListener } from "@services/web3/events/reward-system/reward-system-listener.service";
+import { token2022Listener } from "@services/web3/events/token-2022-listener.service";
 
 
 /** 
@@ -16,6 +17,7 @@ import { rewardSystemListener } from "@services/web3/events/reward-system/reward
  * - Initialize the web3 client
  * - Initialize the Depin Program event listener
  * - Initialize the Reward System event listener
+ * - Initialize the Token 2022 transfer listener
  */
 export const bootstrap = async (): Promise<void> => {
     try {
@@ -26,6 +28,9 @@ export const bootstrap = async (): Promise<void> => {
 
         // Initialize Reward System event listener
         await rewardSystemListener();
+
+        // Initialize Token 2022 transfer listener
+        await token2022Listener();
 
         console.log('✅ Bootstrap completed successfully');
     } catch (error) {

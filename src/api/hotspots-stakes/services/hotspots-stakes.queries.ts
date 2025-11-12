@@ -484,3 +484,69 @@ export const claimRewards = async ({
         client.release();
     }
 };
+
+/**
+ * Update staker wallet address when NFT is transferred
+ */
+export const updateStakerWalletByStakeNftMint = async ({
+    stakeNftMint,
+    newStakerWallet,
+}: {
+    stakeNftMint: string;
+    newStakerWallet: string;
+}): Promise<{ success: boolean; message: string }> => {
+    const client = await pool.connect();
+    try {
+        await client.query("BEGIN");
+
+        // Find the stake by stake_nft_mint
+        const { rows: stakeResult } = await client.query<{ id: number }>(
+            `
+            SELECT id 
+            FROM hotspot_stake 
+            WHERE stake_nft_mint = $1
+            AND status != 'unstaked'
+            LIMIT 1
+        `,
+            [stakeNftMint]
+        );
+
+        if (stakeResult.length === 0) {
+            await client.query("COMMIT");
+            return {
+                success: false,
+                message: "Stake not found for this NFT mint",
+            };
+        }
+
+        const stakeId = stakeResult[0].id;
+
+        // Update the staker wallet address
+        await client.query(
+            `
+            UPDATE hotspot_stake 
+            SET staker_wallet_address = $1, updated_at = $2
+            WHERE id = $3
+        `,
+            [newStakerWallet, new Date().toISOString(), stakeId]
+        );
+
+        await client.query("COMMIT");
+
+        return {
+            success: true,
+            message: "Staker wallet updated successfully",
+        };
+    } catch (error) {
+        await client.query("ROLLBACK");
+        console.error("Error updating staker wallet:", error);
+        const errorMessage =
+            error instanceof Error ? error.message : "Error updating staker wallet";
+        return {
+            success: false,
+            message: errorMessage,
+        };
+    } finally {
+        client.release();
+    }
+};
