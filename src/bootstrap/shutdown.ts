@@ -1,4 +1,5 @@
-import { DepinProgramEventListener } from "@services/web3/events/depin-program-event-listener.service";
+import { DepinProgramEventListener } from "@services/web3/events/depin-program/depin-program-event-listener.service";
+import { RewardSystemEventListener } from "@services/web3/events/reward-system/reward-system-event-listener.service";
 
 /**
  * Shutdown all services
@@ -10,7 +11,9 @@ export const shutdown = async (): Promise<void> => {
         // Cleanup Depin Program event listener
         try {
             const eventListener = await DepinProgramEventListener.getInstance();
+            const rewardSystemEventListener = await RewardSystemEventListener.getInstance();
             eventListener.cleanup();
+            rewardSystemEventListener.cleanup();
         } catch (error) {
             console.warn('⚠️ Error cleaning up event listener:', error);
         }

@@ -2,7 +2,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-call */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import { formatTokenAmount } from "@utils/token-format";
-import { RewardSystemEventListener } from "./reward-system-event-listener.service";
+import { RewardSystemEventListener } from "@services/web3/events/reward-system/reward-system-event-listener.service";
 import { claimRewards } from "@api/hotspots-stakes/services/hotspots-stakes.queries";
 
 /**
