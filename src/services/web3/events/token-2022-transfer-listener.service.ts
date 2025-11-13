@@ -302,39 +302,6 @@ export class Token2022TransferListener {
             return;
         }
 
-        // Extract account keys from transaction (needed for all balance processing)
-        const message = tx.transaction.message;
-        let accountKeys: PublicKey[] = [];
-
-        try {
-            if ('version' in message && message.version !== undefined) {
-                const versionedMessage = message as unknown as anchor.web3.VersionedMessage;
-                try {
-                    const accountKeysObj = versionedMessage.getAccountKeys();
-                    accountKeys = accountKeysObj.staticAccountKeys;
-                } catch {
-                    if (tx.meta?.loadedAddresses) {
-                        const staticKeys = versionedMessage.staticAccountKeys || [];
-                        const writableLoaded = tx.meta.loadedAddresses.writable || [];
-                        const readonlyLoaded = tx.meta.loadedAddresses.readonly || [];
-                        accountKeys = [...staticKeys, ...writableLoaded, ...readonlyLoaded];
-                    } else {
-                        console.warn(`⚠️ Cannot resolve address table lookups for transaction ${signature}`);
-                        return;
-                    }
-                }
-            } else {
-                const legacyMessage = message as anchor.web3.Message;
-                accountKeys = legacyMessage.accountKeys.map(
-                    (key: PublicKey | string) =>
-                        typeof key === 'string' ? new PublicKey(key) : key
-                );
-            }
-        } catch (error) {
-            console.warn(`⚠️ Error extracting account keys for transaction ${signature}:`, error);
-            return;
-        }
-
         // Track transfers by mint
         const transfersByMint = new Map<string, {
             mint: PublicKey;
@@ -417,7 +384,7 @@ export class Token2022TransferListener {
         }
 
         // Second pass: process only NFTs that exist in our database
-        for (const [accountIndex, balances] of allBalances) {
+        for (const [_accountIndex, balances] of allBalances) {
             const preBalance = balances.pre;
             const postBalance = balances.post;
 
@@ -445,16 +412,6 @@ export class Token2022TransferListener {
                 continue; // NFT not in our database - skip silently
             }
 
-            // Get account owner from transaction accounts
-            let accountOwner: PublicKey | null = null;
-            if (accountIndex < accountKeys.length && accountKeys[accountIndex]) {
-                accountOwner = accountKeys[accountIndex];
-            }
-
-            if (!accountOwner) {
-                continue; // Can't determine account owner
-            }
-
             // Track the transfer
             if (!transfersByMint.has(mintAddress.toString())) {
                 transfersByMint.set(mintAddress.toString(), {
@@ -471,12 +428,27 @@ export class Token2022TransferListener {
             }
 
             // Determine if this is a transfer out (from) or in (to)
+            // The owner property contains the wallet address that owns the token account
             if (preAmount === '1' && postAmount === '0') {
-                // NFT was transferred out
-                transfer.from = accountOwner;
+                // NFT was transferred out - use preBalance owner as 'from'
+                const fromOwnerStr = preBalance?.owner;
+                if (fromOwnerStr) {
+                    try {
+                        transfer.from = new PublicKey(fromOwnerStr);
+                    } catch {
+                        // Invalid address, skip
+                    }
+                }
             } else if ((preAmount === '0' || preAmount === '') && postAmount === '1') {
-                // NFT was transferred in (new account created or existing account received)
-                transfer.to = accountOwner;
+                // NFT was transferred in - use postBalance owner as 'to'
+                const toOwnerStr = postBalance?.owner;
+                if (toOwnerStr) {
+                    try {
+                        transfer.to = new PublicKey(toOwnerStr);
+                    } catch {
+                        // Invalid address, skip
+                    }
+                }
             }
         }
 
