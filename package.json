@@ -6,7 +6,7 @@
   "type": "commonjs",
   "scripts": {
     "dev": "nodemon",
-    "build": "tsc && npm run copy-sql && eslint .",
+    "build": "tsc && tsc-alias && npm run copy-sql && eslint .",
     "copy-sql": "mkdir -p dist/database && cp src/database/*.sql dist/database/ 2>/dev/null || true",
     "start": "node dist/server.js",
     "lint": "eslint .",
@@ -40,6 +40,7 @@
     "@typescript-eslint/parser": "^8.46.3",
     "eslint": "^9.39.1",
     "nodemon": "^3.1.10",
+    "tsc-alias": "^1.8.16",
     "tsconfig-paths": "^4.2.0",
     "tsx": "^4.19.2",
     "typescript": "^5.4.5",
