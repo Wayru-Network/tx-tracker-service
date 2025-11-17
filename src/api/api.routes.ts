@@ -1,6 +1,5 @@
 import Router from "koa-router";
 import { ROUTES } from "@constants/router";
-import healthRouter from "./health/routes/health.route";
 import { authValidator } from "@middlewares/auth-validator";
 
 const mainRouter = new Router({
@@ -8,8 +7,7 @@ const mainRouter = new Router({
 });
 
 // Public routes (no authentication required)
-mainRouter.use(healthRouter.routes());
-mainRouter.use(healthRouter.allowedMethods());
+
 
 // Group protected routes
 const protectedRoutes = new Router({
