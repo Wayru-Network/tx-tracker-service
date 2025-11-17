@@ -69,12 +69,13 @@ This server handles the complex task of parsing blockchain logs, extracting tran
 * **Smart Contract Integration**: Direct interaction with Wayru Network smart contracts
 * **Connection Management**: Singleton pattern for efficient connection reuse
 
-### ⚡ Health Monitoring
+### ⚡ Health Monitoring & Heartbeat System
 
-* **Health Check Endpoint**: Monitor application status and service connectivity
-* **Database Health**: Verify PostgreSQL connection status
-* **Solana Connection Health**: Check Solana RPC connection status
-* **Service Status Reporting**: Real-time status of all critical services
+* **Heartbeat Service**: Automatically updates service health status in the database every 15 seconds
+* **Database-Backed Health Checks**: Frontend can verify service availability by querying the shared database
+* **Comprehensive Health Status**: Monitors database, Solana RPC, Depin Program, and Reward System connections
+* **Service Status Tracking**: Real-time status tracking stored in `heartbeats` table for cross-service communication
+* **Automatic Document Creation**: Creates heartbeat records automatically if they don't exist
 
 ## 🛠️ Tech Stack
 
@@ -173,9 +174,6 @@ DEFAULT_REWARD_SYSTEM_PROGRAM_ID=Ey6f9uyT1s3UrCGpc586aeHmEupYdfR2xo8Nh7TpqLhX
 tx-tracker-server/
 ├── src/
 │   ├── api/
-│   │   ├── health/              # Health check endpoints
-│   │   │   ├── health.controller.ts
-│   │   │   └── health.route.ts
 │   │   ├── hotspots-stakes/     # Hotspots and stakes API (to be removed)
 │   │   ├── keys/                # Keys API
 │   │   ├── nfnodes/             # NFNodes API
@@ -198,6 +196,11 @@ tx-tracker-server/
 │   │   ├── auth-validator.ts    # Authentication middleware
 │   │   └── db-error-handler.ts  # Database error handling
 │   ├── services/
+│   │   ├── health/              # Health check service
+│   │   │   └── health-check.service.ts
+│   │   ├── heartbeat/           # Heartbeat service
+│   │   │   ├── heartbeat.service.ts
+│   │   │   └── heartbeat.queries.ts
 │   │   └── web3/
 │   │       ├── events/          # Blockchain event listeners
 │   │       ├── program/         # Program interaction services
@@ -223,70 +226,66 @@ tx-tracker-server/
 | `npm run lint` | Run ESLint to check code quality |
 | `npm run lint:fix` | Run ESLint and automatically fix issues |
 
-## 📚 API Documentation
+## 📚 Heartbeat System
 
-### Health Check Endpoint
+The Transaction Tracker Server includes a heartbeat system that allows other services (like the frontend) to verify its health status by querying a shared database table. This approach avoids exposing HTTP endpoints and IP addresses while providing reliable health status information.
 
-#### GET `/api/health`
+### How It Works
 
-Check the health status of the application and its dependencies.
+1. **Automatic Updates**: The heartbeat service runs automatically and updates the `heartbeats` table every 15 seconds
+2. **Service Identification**: Uses `service_name = 'tx_tracker_service'` to identify this service
+3. **Health Status Storage**: Stores comprehensive health information in the `extra_info` JSON field
+4. **Database-Backed**: Frontend and other services can query the database directly to check service status
 
-**Authentication**: Not required (public endpoint)
+### Database Table Structure
 
-**Response**:
+The `heartbeats` table contains the following fields:
+
+* `service_name` (VARCHAR): Service identifier (`'tx_tracker_service'`)
+* `last_seen_at` (TIMESTAMP): Last heartbeat update timestamp
+* `extra_info` (JSON): Complete health status information
+* `created_at` (TIMESTAMP): Record creation timestamp
+* `published_at` (TIMESTAMP): Record publication timestamp
+
+### Health Status Format
+
+The `extra_info` field contains a JSON object with the following structure:
 
 ```json
 {
-  "status": "ok",
+  "status": "ok" | "degraded" | "down",
   "timestamp": "2024-01-15T10:30:00.000Z",
   "services": {
-    "database": "connected",
-    "solana": "connected"
+    "database": "connected" | "disconnected" | "unknown",
+    "solana": "connected" | "disconnected" | "unknown",
+    "depin": "connected" | "disconnected" | "unknown",
+    "rewardSystem": "connected" | "disconnected" | "unknown"
   }
 }
 ```
 
-**Status Codes**:
-* `200 OK`: All services are healthy
-* `503 Service Unavailable`: One or more services are unavailable
+### Frontend Integration
 
-**Response Fields**:
-* `status`: Overall application status (`"ok"` or `"degraded"`)
-* `timestamp`: Current server timestamp in ISO format
-* `services.database`: PostgreSQL connection status (`"connected"` or `"disconnected"`)
-* `services.solana`: Solana RPC connection status (`"connected"` or `"disconnected"`)
+To check if the service is healthy before performing transactions, query the database:
 
-**Example Request**:
-
-```bash
-curl http://localhost:1335/api/health
+```sql
+SELECT service_name, last_seen_at, extra_info
+FROM heartbeats
+WHERE service_name = 'tx_tracker_service';
 ```
 
-**Example Response (Healthy)**:
+**Health Check Logic**:
+* If `last_seen_at` is older than 30-60 seconds → Service may be down
+* If `extra_info.status` is `"down"` → Do not proceed with transactions
+* If `extra_info.status` is `"degraded"` → Show warning but allow transactions
+* If `extra_info.status` is `"ok"` → Proceed normally
 
-```json
-{
-  "status": "ok",
-  "timestamp": "2024-01-15T10:30:00.000Z",
-  "services": {
-    "database": "connected",
-    "solana": "connected"
-  }
-}
-```
+### Features
 
-**Example Response (Degraded)**:
-
-```json
-{
-  "status": "degraded",
-  "timestamp": "2024-01-15T10:30:00.000Z",
-  "services": {
-    "database": "connected",
-    "solana": "disconnected"
-  }
-}
-```
+* **Automatic Document Creation**: If no heartbeat record exists, one is created automatically with default status
+* **Table Existence Check**: Gracefully handles cases where the table doesn't exist yet
+* **Error Resilience**: Heartbeat failures don't crash the service
+* **Update Strategy**: Uses UPDATE-first approach (no UNIQUE constraint required)
 
 ## 💻 Development
 
