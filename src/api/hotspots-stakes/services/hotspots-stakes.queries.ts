@@ -484,3 +484,148 @@ export const claimRewards = async ({
         client.release();
     }
 };
+
+/**
+ * Update staker wallet address when NFT is transferred
+ */
+export const updateStakerWalletByStakeNftMint = async ({
+    stakeNftMint,
+    newStakerWallet,
+}: {
+    stakeNftMint: string;
+    newStakerWallet: string;
+}): Promise<{ success: boolean; message: string }> => {
+    const client = await pool.connect();
+    try {
+        await client.query("BEGIN");
+
+        // Find the stake by stake_nft_mint
+        const { rows: stakeResult } = await client.query<{ id: number }>(
+            `
+            SELECT id 
+            FROM hotspot_stake 
+            WHERE stake_nft_mint = $1
+            AND status != 'unstaked'
+            LIMIT 1
+        `,
+            [stakeNftMint]
+        );
+
+        if (stakeResult.length === 0) {
+            await client.query("COMMIT");
+            return {
+                success: false,
+                message: "Stake not found for this NFT mint",
+            };
+        }
+
+        const stakeId = stakeResult[0].id;
+
+        // Update the staker wallet address
+        await client.query(
+            `
+            UPDATE hotspot_stake 
+            SET staker_wallet_address = $1, updated_at = $2
+            WHERE id = $3
+        `,
+            [newStakerWallet, new Date().toISOString(), stakeId]
+        );
+
+        await client.query("COMMIT");
+
+        return {
+            success: true,
+            message: "Staker wallet updated successfully",
+        };
+    } catch (error) {
+        await client.query("ROLLBACK");
+        console.error("Error updating staker wallet:", error);
+        const errorMessage =
+            error instanceof Error ? error.message : "Error updating staker wallet";
+        return {
+            success: false,
+            message: errorMessage,
+        };
+    } finally {
+        client.release();
+    }
+};
+
+/**
+ * Check if a stake exists for a given NFT mint address
+ * This is used to quickly verify if an NFT is relevant before processing blockchain queries
+ * @param stakeNftMint - The NFT mint address to check
+ * @returns true if a stake exists with this NFT mint, false otherwise
+ */
+export const checkStakeExistsByNftMint = async (stakeNftMint: string): Promise<boolean> => {
+    const client = await pool.connect();
+    try {
+        const { rows } = await client.query<{ exists: boolean }>(
+            `
+            SELECT EXISTS(
+                SELECT 1 
+                FROM hotspot_stake 
+                WHERE stake_nft_mint = $1
+                AND status != 'unstaked'
+            ) as exists
+        `,
+            [stakeNftMint]
+        );
+
+        return rows[0]?.exists ?? false;
+    } catch (error) {
+        console.error("Error checking stake existence:", error);
+        return false; // On error, assume it doesn't exist to avoid false positives
+    } finally {
+        client.release();
+    }
+};
+
+/**
+ * Batch check which NFT mints exist in the database
+ * More efficient than individual checks when processing multiple NFTs
+ * @param stakeNftMints - Array of NFT mint addresses to check
+ * @returns Map of mint address to boolean (true if exists)
+ */
+export const batchCheckStakeExistsByNftMints = async (
+    stakeNftMints: string[]
+): Promise<Map<string, boolean>> => {
+    if (stakeNftMints.length === 0) {
+        return new Map();
+    }
+
+    const client = await pool.connect();
+    try {
+        // Use ANY(array) for efficient batch check
+        const { rows } = await client.query<{ stake_nft_mint: string }>(
+            `
+            SELECT DISTINCT stake_nft_mint
+            FROM hotspot_stake 
+            WHERE stake_nft_mint = ANY($1::text[])
+            AND status != 'unstaked'
+        `,
+            [stakeNftMints]
+        );
+
+        // Create a Set for O(1) lookup
+        const existingMints = new Set(rows.map((row) => row.stake_nft_mint));
+
+        // Return Map with all requested mints (true if exists, false otherwise)
+        const result = new Map<string, boolean>();
+        for (const mint of stakeNftMints) {
+            result.set(mint, existingMints.has(mint));
+        }
+
+        return result;
+    } catch (error) {
+        console.error("Error batch checking stake existence:", error);
+        // On error, return all false to avoid false positives
+        const result = new Map<string, boolean>();
+        for (const mint of stakeNftMints) {
+            result.set(mint, false);
+        }
+        return result;
+    } finally {
+        client.release();
+    }
+};

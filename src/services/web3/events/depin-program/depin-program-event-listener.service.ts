@@ -1,6 +1,6 @@
 import * as anchor from "@coral-xyz/anchor";
-import { getSolanaConnection } from "../solana/solana-connection.service";
-import { getDepinProgramId } from "../program/depin-program/depin-program.service";
+import { getSolanaConnection } from "@services/web3/solana/solana-connection.service";
+import { getDepinProgramId } from "@services/web3/program/depin-program/depin-program.service";
 import {
     getInstructionName
 } from "@constants/depin-instructions";
