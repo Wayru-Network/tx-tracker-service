@@ -1,37 +1,37 @@
-import pool from "@config/db";
+import pool, { explorers_pool } from "@config/db";
 import {
-    calcOffset,
-    calcTotalPages,
+  calcOffset,
+  calcTotalPages,
 } from "@helpers/pagination/pagination.helper";
 import {
-    ClaimRewardsInput,
-    CreateStakeInput,
-    HotspotsStakesOutput,
+  ClaimRewardsInput,
+  CreateStakeInput,
+  HotspotsStakesOutput,
 } from "@interfaces/api/hotspots-stakes/hotspots-stakes";
 
 export const getStakesByWalletAddress = async ({
-    walletAddress,
-    page,
-    pageSize,
+  walletAddress,
+  page,
+  pageSize,
 }: {
-    walletAddress: string;
+  walletAddress: string;
+  page: number;
+  pageSize: number;
+}): Promise<{
+  data: HotspotsStakesOutput[];
+  pagination: {
     page: number;
     pageSize: number;
-}): Promise<{
-    data: HotspotsStakesOutput[];
-    pagination: {
-        page: number;
-        pageSize: number;
-        total: number;
-        totalPages: number;
-    };
+    total: number;
+    totalPages: number;
+  };
 }> => {
-    try {
-        await pool.connect();
-        const offset = calcOffset(page, pageSize);
+  try {
+    await pool.connect();
+    const offset = calcOffset(page, pageSize);
 
-        // query data
-        const { rows: data } = await pool.query<HotspotsStakesOutput>(`
+    // query data
+    const { rows: data } = await pool.query<HotspotsStakesOutput>(`
         SELECT 
             hs.*,
             n.model,
@@ -47,8 +47,8 @@ export const getStakesByWalletAddress = async ({
         LIMIT ${pageSize} OFFSET ${offset}
     `);
 
-        // query count
-        const { rows: countResult } = await pool.query<{ total: string }>(`
+    // query count
+    const { rows: countResult } = await pool.query<{ total: string }>(`
        SELECT COUNT(DISTINCT hs.id) as total
         FROM hotspot_stake hs
         LEFT JOIN hotspot_stake_nfnode_links hsnl ON hs.id = hsnl.hotspots_stakes_id
@@ -57,96 +57,95 @@ export const getStakesByWalletAddress = async ({
         WHERE hs.staker_wallet_address = '${walletAddress}'
         AND nnl.network_id IS NOT NULL
     `);
-        const total = parseInt(countResult[0]?.total ?? "0");
+    const total = parseInt(countResult[0]?.total ?? "0");
 
-        // for the moment, we are using a fixed value for the earned wayru
-        for (const d of data) {
-            //TODO: for the moment, we are using a fixed value for the earned wayru
-            const randomNumber = Math.random() * 900 + 100;
-            d.earned_wayru = parseFloat(randomNumber.toFixed(6));
-        }
-
-        return {
-            data: data,
-            pagination: {
-                page,
-                pageSize,
-                total: total,
-                totalPages: calcTotalPages(total, pageSize),
-            },
-        };
-    } catch (error) {
-        console.error("Error getting stakes by wallet address:", error);
-        return {
-            data: [],
-            pagination: {
-                page,
-                pageSize,
-                total: 0,
-                totalPages: 0,
-            },
-        };
+    // for the moment, we are using a fixed value for the earned wayru
+    for (const d of data) {
+      //TODO: for the moment, we are using a fixed value for the earned wayru
+      const randomNumber = Math.random() * 900 + 100;
+      d.earned_wayru = parseFloat(randomNumber.toFixed(6));
     }
+
+    return {
+      data: data,
+      pagination: {
+        page,
+        pageSize,
+        total: total,
+        totalPages: calcTotalPages(total, pageSize),
+      },
+    };
+  } catch (error) {
+    console.error("Error getting stakes by wallet address:", error);
+    return {
+      data: [],
+      pagination: {
+        page,
+        pageSize,
+        total: 0,
+        totalPages: 0,
+      },
+    };
+  }
 };
 
 export const stake = async ({
-    walletAddress,
-    amount: amountProps,
-    externalNftMint,
-    stakeNftMint,
+  walletAddress,
+  amount: amountProps,
+  externalNftMint,
+  stakeNftMint,
 }: CreateStakeInput): Promise<{
-    success: boolean;
-    message: string;
-    stakeId?: number;
+  success: boolean;
+  message: string;
+  stakeId?: number;
 }> => {
-    const client = await pool.connect();
-    console.log("Amount props:", amountProps, "Type:", typeof amountProps);
+  const client = await pool.connect();
+  console.log("Amount props:", amountProps, "Type:", typeof amountProps);
 
-    // Ensure amount is properly converted to number
-    const amount =
-        typeof amountProps === "string"
-            ? parseFloat(amountProps)
-            : Number(amountProps);
+  // Ensure amount is properly converted to number
+  const amount =
+    typeof amountProps === "string"
+      ? parseFloat(amountProps)
+      : Number(amountProps);
 
-    if (isNaN(amount)) {
-        throw new Error(`Invalid amount value: ${amountProps}`);
+  if (isNaN(amount)) {
+    throw new Error(`Invalid amount value: ${amountProps}`);
+  }
+
+  console.log("Creating stake:", {
+    walletAddress,
+    amount,
+    externalNftMint,
+    amountType: typeof amount,
+  });
+
+  try {
+    // Start transaction
+    await client.query("BEGIN");
+    // Check if the nfnode exists (using the same client for transaction)
+    const nfnodeResult = await client.query<{
+      id: number;
+      solana_asset_id: string;
+      model: string;
+      name: string;
+    }>("SELECT * FROM nfnodes WHERE solana_asset_id = $1", [externalNftMint]);
+    const nfnode = nfnodeResult.rows?.length > 0 ? nfnodeResult.rows[0] : null;
+    if (!nfnode) {
+      throw new Error("Nfnode not found");
     }
 
-    console.log("Creating stake:", {
-        walletAddress,
-        amount,
-        externalNftMint,
-        amountType: typeof amount,
-    });
+    // current date + 90 days, format: YYYY-MM-DD HH:mm:ss (Postgres-friendly)
+    const unlocksIn = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .replace("T", " ")
+      .substring(0, 19);
 
-    try {
-        // Start transaction
-        await client.query("BEGIN");
-
-        // Check if the nfnode exists (using the same client for transaction)
-        const nfnodeResult = await client.query<{
-            id: number;
-            solana_asset_id: string;
-            model: string;
-            name: string;
-        }>("SELECT * FROM nfnodes WHERE solana_asset_id = $1", [externalNftMint]);
-        const nfnode = nfnodeResult.rows?.length > 0 ? nfnodeResult.rows[0] : null;
-        if (!nfnode) {
-            throw new Error("Nfnode not found");
-        }
-
-        // current date + 90 days, format: YYYY-MM-DD HH:mm:ss (Postgres-friendly)
-        const unlocksIn = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000)
-            .toISOString()
-            .replace("T", " ")
-            .substring(0, 19);
-
-        // Check if a stake already exists with the same walletAddress and externalNftMint with status != 'unstaked'
-        const existingStakeResult = await client.query<{
-            id: number;
-            amount: string | number;
-        }>(
-            `
+    // Check if a stake already exists with the same walletAddress and externalNftMint with status != 'unstaked'
+    const existingStakeResult = await client.query<{
+      id: number;
+      amount: string | number;
+    }>(
+      `
             SELECT hs.id, hs.amount
             FROM hotspot_stake hs
             INNER JOIN hotspot_stake_nfnode_links hsnl ON hs.id = hsnl.hotspots_stakes_id
@@ -155,210 +154,228 @@ export const stake = async ({
             AND hs.status != 'unstaked'
             LIMIT 1
         `,
-            [walletAddress, nfnode.id]
-        );
+      [walletAddress, nfnode.id]
+    );
 
-        let stakeId: number;
-        let isUpdate = false;
+    let stakeId: number;
+    let isUpdate = false;
 
-        console.log("Existing stake result:", existingStakeResult.rows);
-        if (existingStakeResult.rows?.length > 0) {
-            // Update existing stake by adding the new amount
-            const existingStake = existingStakeResult.rows[0];
-            stakeId = existingStake.id;
+    console.log("Existing stake result:", existingStakeResult.rows);
+    if (existingStakeResult.rows?.length > 0) {
+      // Update existing stake by adding the new amount
+      const existingStake = existingStakeResult.rows[0];
+      stakeId = existingStake.id;
 
-            // Parse amount from database (PostgreSQL returns numeric as string)
-            // If amount is null, undefined, or NaN, treat it as 0
-            let existingAmount = 0;
-            if (existingStake.amount !== null && existingStake.amount !== undefined) {
-                const parsed =
-                    typeof existingStake.amount === "string"
-                        ? parseFloat(existingStake.amount)
-                        : Number(existingStake.amount);
+      // Parse amount from database (PostgreSQL returns numeric as string)
+      // If amount is null, undefined, or NaN, treat it as 0
+      let existingAmount = 0;
+      if (existingStake.amount !== null && existingStake.amount !== undefined) {
+        const parsed =
+          typeof existingStake.amount === "string"
+            ? parseFloat(existingStake.amount)
+            : Number(existingStake.amount);
 
-                if (!isNaN(parsed)) {
-                    existingAmount = parsed;
-                }
-            }
+        if (!isNaN(parsed)) {
+          existingAmount = parsed;
+        }
+      }
 
-            console.log(
-                "Existing stake raw amount:",
-                existingStake.amount,
-                "Parsed amount:",
-                existingAmount
-            );
+      console.log(
+        "Existing stake raw amount:",
+        existingStake.amount,
+        "Parsed amount:",
+        existingAmount
+      );
 
-            const newAmount = existingAmount + amount;
-            isUpdate = true;
+      const newAmount = existingAmount + amount;
+      isUpdate = true;
 
-            console.log(
-                "Updating stake - Existing amount:",
-                existingAmount,
-                "New amount to add:",
-                amount,
-                "Total:",
-                newAmount
-            );
-            const amountToSave = newAmount.toString();
-            console.log(
-                "Updating with amount value:",
-                amountToSave,
-                "Type:",
-                typeof amountToSave
-            );
+      console.log(
+        "Updating stake - Existing amount:",
+        existingAmount,
+        "New amount to add:",
+        amount,
+        "Total:",
+        newAmount
+      );
+      const amountToSave = newAmount.toString();
+      console.log(
+        "Updating with amount value:",
+        amountToSave,
+        "Type:",
+        typeof amountToSave
+      );
 
-            const updateResult = await client.query<{
-                id: number;
-                amount: string | number;
-            }>(
-                `
+      const updateResult = await client.query<{
+        id: number;
+        amount: string | number;
+      }>(
+        `
                 UPDATE hotspot_stake 
                 SET amount = $1::numeric, updated_at = $2, status = 'staked', unlocks_in = $3::timestamp
                 WHERE id = $4
                 RETURNING id, amount
             `,
-                [amountToSave, new Date().toISOString(), unlocksIn, stakeId]
-            );
+        [amountToSave, new Date().toISOString(), unlocksIn, stakeId]
+      );
 
-            const savedAmount =
-                typeof updateResult.rows[0]?.amount === "string"
-                    ? parseFloat(updateResult.rows[0].amount)
-                    : Number(updateResult.rows[0]?.amount);
-            console.log(
-                "Stake updated - Amount saved:",
-                savedAmount,
-                "Raw value:",
-                updateResult.rows[0]?.amount
-            );
-            console.log("Stake updated successfully");
-        } else {
-            // Insert new stake into hotspot_stake and get the ID
-            console.log(
-                "Inserting new stake with amount:",
-                amount,
-                "Type:",
-                typeof amount
-            );
-            const amountToInsert = amount.toString();
-            console.log(
-                "Inserting with amount value:",
-                amountToInsert,
-                "Type:",
-                typeof amountToInsert
-            );
+      const savedAmount =
+        typeof updateResult.rows[0]?.amount === "string"
+          ? parseFloat(updateResult.rows[0].amount)
+          : Number(updateResult.rows[0]?.amount);
+      console.log(
+        "Stake updated - Amount saved:",
+        savedAmount,
+        "Raw value:",
+        updateResult.rows[0]?.amount
+      );
 
-            const stakeResult = await client.query<{
-                id: number;
-                amount: string | number;
-            }>(
-                `
+      try {
+        await explorers_pool.query(
+          `UPDATE hotspot_stats SET staked = $1 WHERE hotspot_id = $2`,
+          [amountToSave, nfnode.id]
+        );
+      } catch (error) {
+        console.error("Error updating explorers hotspot_stats:", error);
+      }
+
+      console.log("Stake updated successfully");
+    } else {
+      // Insert new stake into hotspot_stake and get the ID
+      console.log(
+        "Inserting new stake with amount:",
+        amount,
+        "Type:",
+        typeof amount
+      );
+      const amountToInsert = amount.toString();
+      console.log(
+        "Inserting with amount value:",
+        amountToInsert,
+        "Type:",
+        typeof amountToInsert
+      );
+
+      const stakeResult = await client.query<{
+        id: number;
+        amount: string | number;
+      }>(
+        `
                 INSERT INTO hotspot_stake (staker_wallet_address, amount, status, created_at, published_at, stake_nft_mint, unlocks_in)
                 VALUES ($1, $2::numeric, $3, $4, $5, $6, $7::timestamp)
                 RETURNING id, amount
             `,
-                [
-                    walletAddress,
-                    amountToInsert,
-                    "staked",
-                    new Date().toISOString(),
-                    new Date().toISOString(),
-                    stakeNftMint,
-                    unlocksIn,
-                ]
-            );
+        [
+          walletAddress,
+          amountToInsert,
+          "staked",
+          new Date().toISOString(),
+          new Date().toISOString(),
+          stakeNftMint,
+          unlocksIn,
+        ]
+      );
 
-            stakeId = stakeResult.rows[0]?.id;
-            const insertedAmountRaw = stakeResult.rows[0]?.amount;
-            const insertedAmount =
-                typeof insertedAmountRaw === "string"
-                    ? parseFloat(insertedAmountRaw)
-                    : Number(insertedAmountRaw);
-            console.log(
-                "Stake inserted - ID:",
-                stakeId,
-                "Amount saved:",
-                insertedAmount,
-                "Raw value:",
-                insertedAmountRaw
-            );
+      stakeId = stakeResult.rows[0]?.id;
+      const insertedAmountRaw = stakeResult.rows[0]?.amount;
+      const insertedAmount =
+        typeof insertedAmountRaw === "string"
+          ? parseFloat(insertedAmountRaw)
+          : Number(insertedAmountRaw);
+      console.log(
+        "Stake inserted - ID:",
+        stakeId,
+        "Amount saved:",
+        insertedAmount,
+        "Raw value:",
+        insertedAmountRaw
+      );
 
-            if (!stakeId) {
-                throw new Error("Failed to create stake: No ID returned");
-            }
+      if (!stakeId) {
+        throw new Error("Failed to create stake: No ID returned");
+      }
 
-            // Insert into hotspot_stake_nfnode_links (relationship table)
-            await client.query(
-                `
+      // Insert into hotspot_stake_nfnode_links (relationship table)
+      await client.query(
+        `
                 INSERT INTO hotspot_stake_nfnode_links (hotspots_stakes_id, nfnode_id)
                 VALUES ($1, $2)
             `,
-                [stakeId, nfnode.id]
-            );
+        [stakeId, nfnode.id]
+      );
 
-            console.log("Stake created successfully");
-        }
-
-        // Commit transaction
-        await client.query("COMMIT");
-
-        return {
-            success: true,
-            message: isUpdate
-                ? "Stake updated successfully"
-                : "Stake created successfully",
-            stakeId,
-        };
-    } catch (error) {
-        // Rollback transaction on error
-        await client.query("ROLLBACK");
-        console.error("Error creating stake:", error);
-
-        const errorMessage =
-            error instanceof Error ? error.message : "Error creating stake";
-        return {
-            success: false,
-            message: errorMessage,
-        };
-    } finally {
-        // Release client back to pool
-        client.release();
+      try {
+        await explorers_pool.query(
+          `UPDATE hotspot_stats SET staked = $1 WHERE hotspot_id = $2`,
+          [amountToInsert, nfnode.id]
+        );
+      } catch (error) {
+        console.error("Error updating explorers hotspot_stats:", error);
+      }
+      console.log("Stake created successfully");
     }
+
+    // Commit transaction
+    await client.query("COMMIT");
+
+    return {
+      success: true,
+      message: isUpdate
+        ? "Stake updated successfully"
+        : "Stake created successfully",
+      stakeId,
+    };
+  } catch (error) {
+    // Rollback transaction on error
+    await client.query("ROLLBACK");
+    console.error("Error creating stake:", error);
+
+    const errorMessage =
+      error instanceof Error ? error.message : "Error creating stake";
+    return {
+      success: false,
+      message: errorMessage,
+    };
+  } finally {
+    // Release client back to pool
+    client.release();
+  }
 };
 
 export const unStake = async ({
-    walletAddress,
-    amount: amountProps,
-    externalNftMint,
-    stakeNftMint,
+  walletAddress,
+  amount: amountProps,
+  externalNftMint,
+  stakeNftMint,
 }: CreateStakeInput): Promise<{
-    success: boolean;
-    message: string;
-    stakeId?: number;
+  success: boolean;
+  message: string;
+  stakeId?: number;
 }> => {
-    const client = await pool.connect();
-    console.log("Amount props:", amountProps);
-    const amount = Number(amountProps);
-    console.log("Unstaking stake:", { walletAddress, amount, externalNftMint });
+  const client = await pool.connect();
+  console.log("Amount props:", amountProps);
+  const amount = Number(amountProps);
+  console.log("Unstaking stake:", { walletAddress, amount, externalNftMint });
 
-    try {
-        // Start transaction
-        await client.query("BEGIN");
+  try {
+    // Start transaction
+    await client.query("BEGIN");
 
-        // Check if the nfnode exists (using the same client for transaction)
-        const nfnodeResult = await client.query<{
-            id: number;
-            solana_asset_id: string;
-            model: string;
-            name: string;
-        }>("SELECT * FROM nfnodes WHERE solana_asset_id = $1", [externalNftMint]);
-        const nfnode = nfnodeResult.rows?.length > 0 ? nfnodeResult.rows[0] : null;
-        if (!nfnode) {
-            throw new Error("Nfnode not found");
-        }
+    // Check if the nfnode exists (using the same client for transaction)
+    const nfnodeResult = await client.query<{
+      id: number;
+      solana_asset_id: string;
+      model: string;
+      name: string;
+    }>("SELECT * FROM nfnodes WHERE solana_asset_id = $1", [externalNftMint]);
+    const nfnode = nfnodeResult.rows?.length > 0 ? nfnodeResult.rows[0] : null;
+    if (!nfnode) {
+      throw new Error("Nfnode not found");
+    }
 
-        // Check if the stake exists using JOIN with the relationship table
-        const stakeResult = await client.query<{ id: number }>(
-            `
+    // Check if the stake exists using JOIN with the relationship table
+    const stakeResult = await client.query<{ id: number }>(
+      `
             SELECT hs.*
             FROM hotspot_stake hs
             INNER JOIN hotspot_stake_nfnode_links hsnl ON hs.id = hsnl.hotspots_stakes_id
@@ -367,56 +384,65 @@ export const unStake = async ({
             AND hs.status = 'staked'
             AND hs.stake_nft_mint = $3
         `,
-            [walletAddress, nfnode.id, stakeNftMint]
-        );
-        const stake = stakeResult.rows?.length > 0 ? stakeResult.rows[0] : null;
-        if (!stake) {
-            throw new Error("Stake not found");
-        }
+      [walletAddress, nfnode.id, stakeNftMint]
+    );
+    const stake = stakeResult.rows?.length > 0 ? stakeResult.rows[0] : null;
+    if (!stake) {
+      throw new Error("Stake not found");
+    }
 
-        // Update the stake status to unstaked
-        await client.query(
-            `
+    // Update the stake status to unstaked
+    await client.query(
+      `
             UPDATE hotspot_stake SET status = $1 WHERE id = $2
         `,
-            ["unstaked", stake.id]
-        );
+      ["unstaked", stake.id]
+    );
 
-        // Commit transaction
-        await client.query("COMMIT");
+    // Commit transaction
+    await client.query("COMMIT");
 
-        return {
-            success: true,
-            message: "Stake deleted successfully",
-            stakeId: stake.id,
-        };
+    try {
+      await explorers_pool.query(
+        `UPDATE hotspot_stats SET staked = GREATEST(COALESCE(staked, 0) - $1::numeric, 0) WHERE hotspot_id = $2`,
+        [amount, nfnode.id]
+      );
     } catch (error) {
-        // Rollback transaction on error
-        await client.query("ROLLBACK");
-        console.error("Error deleting stake:", error);
-        const errorMessage =
-            error instanceof Error ? error.message : "Error deleting stake";
-        return {
-            success: false,
-            message: errorMessage,
-        };
-    } finally {
-        // Release client back to pool
-        client.release();
+      console.error("Error substracting explorers hotspot_stats:", error);
     }
+
+    return {
+      success: true,
+      message: "Stake deleted successfully",
+      stakeId: stake.id,
+    };
+  } catch (error) {
+    // Rollback transaction on error
+    await client.query("ROLLBACK");
+    console.error("Error deleting stake:", error);
+    const errorMessage =
+      error instanceof Error ? error.message : "Error deleting stake";
+    return {
+      success: false,
+      message: errorMessage,
+    };
+  } finally {
+    // Release client back to pool
+    client.release();
+  }
 };
 
 export const claimRewards = async ({
-    walletAddress,
-    amount,
-    nftMintAddress,
-    txHash,
+  walletAddress,
+  amount,
+  nftMintAddress,
+  txHash,
 }: ClaimRewardsInput): Promise<{ success: boolean; message: string }> => {
-    const client = await pool.connect();
-    try {
-        await client.query("BEGIN");
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
 
-        const sql = `
+    const sql = `
             SELECT id 
         FROM transaction_trackers 
         WHERE user_wallet_address = '${walletAddress}'
@@ -427,128 +453,128 @@ export const claimRewards = async ({
         LIMIT 1
         `;
 
-        // find the tx tracker:
-        const { rows: txTrackerResult } = await client.query<{ id: number }>(sql);
-        const txTrackerId =
-            txTrackerResult?.length > 0 ? txTrackerResult[0].id : null;
-        if (!txTrackerId) {
-            return {
-                success: false,
-                message: "Tx tracker not found",
-            };
-        }
+    // find the tx tracker:
+    const { rows: txTrackerResult } = await client.query<{ id: number }>(sql);
+    const txTrackerId =
+      txTrackerResult?.length > 0 ? txTrackerResult[0].id : null;
+    if (!txTrackerId) {
+      return {
+        success: false,
+        message: "Tx tracker not found",
+      };
+    }
 
-        // update tx tracker with:
-        //1: tx_hash
-        //2: tx_hash_status = 'success'
-        //3: tracker_result = 'success'
+    // update tx tracker with:
+    //1: tx_hash
+    //2: tx_hash_status = 'success'
+    //3: tracker_result = 'success'
 
-        await client.query(
-            `
+    await client.query(
+      `
             UPDATE transaction_trackers SET tx_hash = $1, tx_hash_status = 'success', tracker_result = 'success' WHERE id = $2
             `,
-            [txHash, txTrackerId]
-        );
+      [txHash, txTrackerId]
+    );
 
-        // update the depin stake rewards:
-        await client.query(
-            `
+    // update the depin stake rewards:
+    await client.query(
+      `
             UPDATE depin_stakes_rewards dsr
             SET status = 'paid'
             FROM transaction_trackers_depin_stakes_rewards_links ttdsr
             WHERE dsr.id = ttdsr.depin_stake_reward_id
             AND ttdsr.transaction_tracker_id = $1
             `,
-            [txTrackerId]
-        );
+      [txTrackerId]
+    );
 
-        // Commit transaction
-        await client.query("COMMIT");
+    // Commit transaction
+    await client.query("COMMIT");
 
-        return {
-            success: true,
-            message: "Rewards claimed successfully",
-        };
-    } catch (error) {
-        // Rollback transaction on error
-        await client.query("ROLLBACK");
-        console.error("Error claiming rewards:", error);
-        const errorMessage =
-            error instanceof Error ? error.message : "Error claiming rewards";
-        return {
-            success: false,
-            message: errorMessage,
-        };
-    } finally {
-        // Release client back to pool
-        client.release();
-    }
+    return {
+      success: true,
+      message: "Rewards claimed successfully",
+    };
+  } catch (error) {
+    // Rollback transaction on error
+    await client.query("ROLLBACK");
+    console.error("Error claiming rewards:", error);
+    const errorMessage =
+      error instanceof Error ? error.message : "Error claiming rewards";
+    return {
+      success: false,
+      message: errorMessage,
+    };
+  } finally {
+    // Release client back to pool
+    client.release();
+  }
 };
 
 /**
  * Update staker wallet address when NFT is transferred
  */
 export const updateStakerWalletByStakeNftMint = async ({
-    stakeNftMint,
-    newStakerWallet,
+  stakeNftMint,
+  newStakerWallet,
 }: {
-    stakeNftMint: string;
-    newStakerWallet: string;
+  stakeNftMint: string;
+  newStakerWallet: string;
 }): Promise<{ success: boolean; message: string }> => {
-    const client = await pool.connect();
-    try {
-        await client.query("BEGIN");
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
 
-        // Find the stake by stake_nft_mint
-        const { rows: stakeResult } = await client.query<{ id: number }>(
-            `
+    // Find the stake by stake_nft_mint
+    const { rows: stakeResult } = await client.query<{ id: number }>(
+      `
             SELECT id 
             FROM hotspot_stake 
             WHERE stake_nft_mint = $1
             AND status != 'unstaked'
             LIMIT 1
         `,
-            [stakeNftMint]
-        );
+      [stakeNftMint]
+    );
 
-        if (stakeResult.length === 0) {
-            await client.query("COMMIT");
-            return {
-                success: false,
-                message: "Stake not found for this NFT mint",
-            };
-        }
+    if (stakeResult.length === 0) {
+      await client.query("COMMIT");
+      return {
+        success: false,
+        message: "Stake not found for this NFT mint",
+      };
+    }
 
-        const stakeId = stakeResult[0].id;
+    const stakeId = stakeResult[0].id;
 
-        // Update the staker wallet address
-        await client.query(
-            `
+    // Update the staker wallet address
+    await client.query(
+      `
             UPDATE hotspot_stake 
             SET staker_wallet_address = $1, updated_at = $2
             WHERE id = $3
         `,
-            [newStakerWallet, new Date().toISOString(), stakeId]
-        );
+      [newStakerWallet, new Date().toISOString(), stakeId]
+    );
 
-        await client.query("COMMIT");
+    await client.query("COMMIT");
 
-        return {
-            success: true,
-            message: "Staker wallet updated successfully",
-        };
-    } catch (error) {
-        await client.query("ROLLBACK");
-        console.error("Error updating staker wallet:", error);
-        const errorMessage =
-            error instanceof Error ? error.message : "Error updating staker wallet";
-        return {
-            success: false,
-            message: errorMessage,
-        };
-    } finally {
-        client.release();
-    }
+    return {
+      success: true,
+      message: "Staker wallet updated successfully",
+    };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    console.error("Error updating staker wallet:", error);
+    const errorMessage =
+      error instanceof Error ? error.message : "Error updating staker wallet";
+    return {
+      success: false,
+      message: errorMessage,
+    };
+  } finally {
+    client.release();
+  }
 };
 
 /**
@@ -557,11 +583,13 @@ export const updateStakerWalletByStakeNftMint = async ({
  * @param stakeNftMint - The NFT mint address to check
  * @returns true if a stake exists with this NFT mint, false otherwise
  */
-export const checkStakeExistsByNftMint = async (stakeNftMint: string): Promise<boolean> => {
-    const client = await pool.connect();
-    try {
-        const { rows } = await client.query<{ exists: boolean }>(
-            `
+export const checkStakeExistsByNftMint = async (
+  stakeNftMint: string
+): Promise<boolean> => {
+  const client = await pool.connect();
+  try {
+    const { rows } = await client.query<{ exists: boolean }>(
+      `
             SELECT EXISTS(
                 SELECT 1 
                 FROM hotspot_stake 
@@ -569,16 +597,16 @@ export const checkStakeExistsByNftMint = async (stakeNftMint: string): Promise<b
                 AND status != 'unstaked'
             ) as exists
         `,
-            [stakeNftMint]
-        );
+      [stakeNftMint]
+    );
 
-        return rows[0]?.exists ?? false;
-    } catch (error) {
-        console.error("Error checking stake existence:", error);
-        return false; // On error, assume it doesn't exist to avoid false positives
-    } finally {
-        client.release();
-    }
+    return rows[0]?.exists ?? false;
+  } catch (error) {
+    console.error("Error checking stake existence:", error);
+    return false; // On error, assume it doesn't exist to avoid false positives
+  } finally {
+    client.release();
+  }
 };
 
 /**
@@ -588,44 +616,44 @@ export const checkStakeExistsByNftMint = async (stakeNftMint: string): Promise<b
  * @returns Map of mint address to boolean (true if exists)
  */
 export const batchCheckStakeExistsByNftMints = async (
-    stakeNftMints: string[]
+  stakeNftMints: string[]
 ): Promise<Map<string, boolean>> => {
-    if (stakeNftMints.length === 0) {
-        return new Map();
-    }
+  if (stakeNftMints.length === 0) {
+    return new Map();
+  }
 
-    const client = await pool.connect();
-    try {
-        // Use ANY(array) for efficient batch check
-        const { rows } = await client.query<{ stake_nft_mint: string }>(
-            `
+  const client = await pool.connect();
+  try {
+    // Use ANY(array) for efficient batch check
+    const { rows } = await client.query<{ stake_nft_mint: string }>(
+      `
             SELECT DISTINCT stake_nft_mint
             FROM hotspot_stake 
             WHERE stake_nft_mint = ANY($1::text[])
             AND status != 'unstaked'
         `,
-            [stakeNftMints]
-        );
+      [stakeNftMints]
+    );
 
-        // Create a Set for O(1) lookup
-        const existingMints = new Set(rows.map((row) => row.stake_nft_mint));
+    // Create a Set for O(1) lookup
+    const existingMints = new Set(rows.map((row) => row.stake_nft_mint));
 
-        // Return Map with all requested mints (true if exists, false otherwise)
-        const result = new Map<string, boolean>();
-        for (const mint of stakeNftMints) {
-            result.set(mint, existingMints.has(mint));
-        }
-
-        return result;
-    } catch (error) {
-        console.error("Error batch checking stake existence:", error);
-        // On error, return all false to avoid false positives
-        const result = new Map<string, boolean>();
-        for (const mint of stakeNftMints) {
-            result.set(mint, false);
-        }
-        return result;
-    } finally {
-        client.release();
+    // Return Map with all requested mints (true if exists, false otherwise)
+    const result = new Map<string, boolean>();
+    for (const mint of stakeNftMints) {
+      result.set(mint, existingMints.has(mint));
     }
+
+    return result;
+  } catch (error) {
+    console.error("Error batch checking stake existence:", error);
+    // On error, return all false to avoid false positives
+    const result = new Map<string, boolean>();
+    for (const mint of stakeNftMints) {
+      result.set(mint, false);
+    }
+    return result;
+  } finally {
+    client.release();
+  }
 };
