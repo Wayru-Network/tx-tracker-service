@@ -1,6 +1,6 @@
 import { depinProgramListener } from "@services/web3/events/depin-program/depin-program-listener.service";
 import { rewardSystemListener } from "@services/web3/events/reward-system/reward-system-listener.service";
-import { token2022Listener } from "@services/web3/events/token-2022-listener.service";
+//import { token2022Listener } from "@services/web3/events/token-2022-listener.service";
 import { ensureIndices } from "@database/ensure-indices";
 import { HeartbeatService } from "@services/heartbeat/heartbeat.service";
 
@@ -27,7 +27,7 @@ export const bootstrap = async (): Promise<void> => {
         await rewardSystemListener();
 
         // Initialize Token 2022 transfer listener
-        await token2022Listener();
+        // await token2022Listener();
 
         // Start heartbeat service (updates every 15 seconds)
         const heartbeatService = HeartbeatService.getInstance();
