@@ -448,7 +448,7 @@ export const claimRewards = async ({
         WHERE user_wallet_address = '${walletAddress}'
         AND validation_params_status = 'validated'
         AND cifraded_signature_status = 'request_authorized_by_admin'
-        AND tx_context @> '{"claimerType": "staker", "stakeNftMint": "${nftMintAddress}", "amountToClaim": ${amount}}'::jsonb
+        AND tx_context @> '{"claimerType": "staker", "stakeNftMint": "${nftMintAddress}", "amountToClaim": ${Number(amount.replace(/,/g, ''))}}'::jsonb
         ORDER BY id DESC
         LIMIT 1
         `;
