@@ -308,8 +308,10 @@ export const stake = async ({
 
       try {
         await explorers_pool.query(
-          `UPDATE hotspot_stats SET staked = $1 WHERE hotspot_id = $2`,
-          [amountToInsert, nfnode.id]
+          `UPDATE hotspot_stats
+            SET staked = COALESCE(staked, 0) + $1
+            WHERE hotspot_id = $2;`,
+          [amount, nfnode.id]
         );
       } catch (error) {
         console.error("Error updating explorers hotspot_stats:", error);
