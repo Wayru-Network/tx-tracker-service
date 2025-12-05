@@ -149,11 +149,12 @@ export const stake = async ({
             SELECT hs.id, hs.amount
             FROM hotspot_stake hs
             INNER JOIN hotspot_stake_nfnode_links hsnl ON hs.id = hsnl.hotspots_stakes_id
-            WHERE hsnl.nfnode_id = $1
+            WHERE hs.staker_wallet_address = $1 
+            AND hsnl.nfnode_id = $2
             AND hs.status != 'unstaked'
             LIMIT 1
         `,
-      [nfnode.id]
+      [walletAddress, nfnode.id]
     );
 
     let stakeId: number;
@@ -231,8 +232,10 @@ export const stake = async ({
 
       try {
         await explorers_pool.query(
-          `UPDATE hotspot_stats SET staked = $1 WHERE hotspot_id = $2`,
-          [amountToSave, nfnode.id]
+          `UPDATE hotspot_stats
+            SET staked = COALESCE(staked, 0) + $1
+            WHERE hotspot_id = $2;`,
+          [amount, nfnode.id]
         );
       } catch (error) {
         console.error("Error updating explorers hotspot_stats:", error);
@@ -378,11 +381,12 @@ export const unStake = async ({
             SELECT hs.*
             FROM hotspot_stake hs
             INNER JOIN hotspot_stake_nfnode_links hsnl ON hs.id = hsnl.hotspots_stakes_id
-            WHERE hsnl.nfnode_id = $1
+            WHERE hs.staker_wallet_address = $1 
+            AND hsnl.nfnode_id = $2
             AND hs.status = 'staked'
-            AND hs.stake_nft_mint = $2
+            AND hs.stake_nft_mint = $3
         `,
-      [nfnode.id, stakeNftMint]
+      [walletAddress, nfnode.id, stakeNftMint]
     );
     const stake = stakeResult.rows?.length > 0 ? stakeResult.rows[0] : null;
     if (!stake) {
