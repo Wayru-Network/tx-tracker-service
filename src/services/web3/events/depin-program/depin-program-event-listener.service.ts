@@ -105,10 +105,17 @@ export class DepinProgramEventListener {
     ): Promise<void> {
         try {
             // Get transaction details to parse instruction data
-            const tx = await this.connection.getTransaction(logs.signature, {
+            let tx = await this.connection.getTransaction(logs.signature, {
                 commitment: 'confirmed',
                 maxSupportedTransactionVersion: 0,
             });
+
+            if (!tx) {
+                tx = await this.connection.getTransaction(logs.signature, {
+                    commitment: 'finalized',
+                    maxSupportedTransactionVersion: 0,
+                });
+            }
 
             if (!tx?.meta || tx.meta.err) {
                 return; // Transaction failed or not found
