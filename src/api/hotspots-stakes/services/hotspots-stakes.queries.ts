@@ -149,12 +149,11 @@ export const stake = async ({
             SELECT hs.id, hs.amount
             FROM hotspot_stake hs
             INNER JOIN hotspot_stake_nfnode_links hsnl ON hs.id = hsnl.hotspots_stakes_id
-            WHERE hs.staker_wallet_address = $1 
-            AND hsnl.nfnode_id = $2
+            WHERE hsnl.nfnode_id = $1
             AND hs.status != 'unstaked'
             LIMIT 1
         `,
-      [walletAddress, nfnode.id]
+      [nfnode.id]
     );
 
     let stakeId: number;
@@ -379,12 +378,11 @@ export const unStake = async ({
             SELECT hs.*
             FROM hotspot_stake hs
             INNER JOIN hotspot_stake_nfnode_links hsnl ON hs.id = hsnl.hotspots_stakes_id
-            WHERE hs.staker_wallet_address = $1 
-            AND hsnl.nfnode_id = $2
+            WHERE hsnl.nfnode_id = $1
             AND hs.status = 'staked'
-            AND hs.stake_nft_mint = $3
+            AND hs.stake_nft_mint = $2
         `,
-      [walletAddress, nfnode.id, stakeNftMint]
+      [nfnode.id, stakeNftMint]
     );
     const stake = stakeResult.rows?.length > 0 ? stakeResult.rows[0] : null;
     if (!stake) {
@@ -448,7 +446,9 @@ export const claimRewards = async ({
         WHERE user_wallet_address = '${walletAddress}'
         AND validation_params_status = 'validated'
         AND cifraded_signature_status = 'request_authorized_by_admin'
-        AND tx_context @> '{"claimerType": "staker", "stakeNftMint": "${nftMintAddress}", "amountToClaim": ${Number(amount.replace(/,/g, ''))}}'::jsonb
+        AND tx_context @> '{"claimerType": "staker", "stakeNftMint": "${nftMintAddress}", "amountToClaim": ${Number(
+      amount.replace(/,/g, "")
+    )}}'::jsonb
         ORDER BY id DESC
         LIMIT 1
         `;
