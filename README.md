@@ -471,4 +471,4 @@ WAYRU
 
 ---
 
-**Note**: This project is now maintained by the community. WAYRU Network no longer provides support, updates, or maintenance. Use at your own discretion and feel free to fork, modify, and improve as needed.
+**Note**: This project is **open source**. Wayru, Inc and The Wayru Foundation are no longer operating entities, and will not provide any kind of support. The community is welcome to use, modify, and improve this codebase.
